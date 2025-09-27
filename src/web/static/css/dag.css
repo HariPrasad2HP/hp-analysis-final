@@ -1,0 +1,326 @@
+/* DAG Visualization Page Styles */
+
+/* Main container for DAG page */
+#graph-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* Header section - compact */
+#graph-container .header {
+    padding: 20px 30px;
+    flex-shrink: 0;
+}
+
+#graph-container .header h1 {
+    font-size: 1.8em;
+    margin-bottom: 5px;
+}
+
+#graph-container .header p {
+    font-size: 1em;
+}
+
+/* Navigation - compact */
+#graph-container .navigation {
+    flex-shrink: 0;
+    padding: 0 30px;
+}
+
+/* Main content area with sidebar layout */
+.dag-main-content {
+    display: flex;
+    flex: 1;
+    min-height: 0; /* Important for flex child to shrink */
+}
+
+/* Graph visualization area */
+#mynetwork {
+    flex: 1;
+    min-height: 400px;
+    border: 1px solid #e0e0e0;
+    background: #fafafa;
+    position: relative;
+}
+
+/* Sidebar for controls and info */
+.dag-sidebar {
+    width: 280px;
+    background: #f8f9fa;
+    border-left: 1px solid #e0e0e0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    flex-shrink: 0;
+    transition: all 0.3s ease;
+}
+
+.dag-sidebar.hidden {
+    width: 0;
+    overflow: hidden;
+    border-left: none;
+}
+
+/* Toggle button styling */
+#sidebar-toggle {
+    background: #667eea !important;
+}
+
+#sidebar-toggle:hover {
+    background: #5a6fd8 !important;
+}
+
+/* Controls Panel */
+.controls-panel {
+    padding: 20px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.controls-panel h3 {
+    margin: 0 0 15px 0;
+    font-size: 1.1em;
+    color: #333;
+    font-weight: 600;
+}
+
+.controls-panel button {
+    display: block;
+    width: 100%;
+    margin-bottom: 8px;
+    padding: 10px 15px;
+    background: #667eea;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.9em;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.controls-panel button:hover {
+    background: #5a6fd8;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.controls-panel button:active {
+    transform: translateY(0);
+}
+
+/* Stats Panel */
+.stats-panel {
+    padding: 20px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.stats-panel h3 {
+    margin: 0 0 15px 0;
+    font-size: 1.1em;
+    color: #333;
+    font-weight: 600;
+}
+
+.stat-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 0.9em;
+}
+
+.stat-item:last-child {
+    border-bottom: none;
+}
+
+.stat-item span:first-child {
+    color: #666;
+    font-weight: 500;
+}
+
+.stat-item span:last-child {
+    color: #333;
+    font-weight: 600;
+    background: #e3f2fd;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.85em;
+}
+
+/* Legend */
+.legend {
+    padding: 20px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.legend h3 {
+    margin: 0 0 15px 0;
+    font-size: 1.1em;
+    color: #333;
+    font-weight: 600;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 0.9em;
+}
+
+.legend-color {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    margin-right: 10px;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+/* Instructions */
+.instructions {
+    padding: 20px;
+    flex: 1;
+}
+
+.instructions h3 {
+    margin: 0 0 15px 0;
+    font-size: 1.1em;
+    color: #333;
+    font-weight: 600;
+}
+
+.instructions p {
+    margin-bottom: 10px;
+    font-size: 0.9em;
+    line-height: 1.5;
+    color: #666;
+}
+
+.instructions strong {
+    color: #333;
+    font-weight: 600;
+}
+
+/* Loading overlay */
+.loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.95);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    font-size: 1.2em;
+    color: #667eea;
+    font-weight: 500;
+}
+
+/* Responsive design */
+@media (max-width: 1024px) {
+    .dag-sidebar {
+        width: 250px;
+    }
+    
+    .controls-panel, .stats-panel, .legend, .instructions {
+        padding: 15px;
+    }
+}
+
+@media (max-width: 768px) {
+    .dag-main-content {
+        flex-direction: column;
+    }
+    
+    .dag-sidebar {
+        width: 100%;
+        height: 300px;
+        border-left: none;
+        border-top: 1px solid #e0e0e0;
+        flex-direction: row;
+        overflow-x: auto;
+    }
+    
+    .controls-panel, .stats-panel, .legend, .instructions {
+        min-width: 200px;
+        border-bottom: none;
+        border-right: 1px solid #e0e0e0;
+    }
+    
+    .instructions {
+        border-right: none;
+    }
+    
+    #mynetwork {
+        min-height: 300px;
+    }
+}
+
+/* Enhanced node hover effects */
+.vis-network-tooltip {
+    background: rgba(0, 0, 0, 0.8) !important;
+    color: white !important;
+    border-radius: 8px !important;
+    padding: 10px 15px !important;
+    font-size: 0.9em !important;
+    max-width: 300px !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Graph controls overlay */
+.graph-controls-overlay {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 100;
+    display: flex;
+    gap: 5px;
+}
+
+.graph-controls-overlay button {
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8em;
+    transition: all 0.2s ease;
+}
+
+.graph-controls-overlay button:hover {
+    background: white;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Status indicators */
+.status-indicator {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 5px;
+}
+
+.status-indicator.online {
+    background: #4caf50;
+}
+
+.status-indicator.offline {
+    background: #f44336;
+}
+
+.status-indicator.loading {
+    background: #ff9800;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}

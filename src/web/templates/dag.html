@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GST Purchase Hierarchy - Interactive DAG</title>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/common.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dag.css') }}">
+</head>
+<body>
+
+    <div id="graph-container">
+        <!-- Compact Header -->
+        <div class="header">
+            <h1>GST Purchase Hierarchy - Interactive DAG</h1>
+            <p id="header-description">
+                <span class="status-indicator loading"></span>
+                Root Node: Loading... → Dynamic Children → Expandable Purchase Hierarchy
+            </p>
+        </div>
+        
+        <!-- Navigation -->
+        <nav class="navigation">
+            <a href="{{ url_for('dashboard') }}" class="nav-link">Dashboard</a>
+            <a href="{{ url_for('hierarchy') }}" class="nav-link">Hierarchy View</a>
+            <a href="{{ url_for('dag') }}" class="nav-link active">DAG Visualization</a>
+        </nav>
+        
+        <!-- Main Content Area -->
+        <div class="dag-main-content">
+            <!-- Graph Visualization -->
+            <div id="mynetwork">
+                <!-- Quick Controls Overlay -->
+                <div class="graph-controls-overlay">
+                    <button onclick="fitToView()" title="Fit to View">🔍</button>
+                    <button onclick="showRootChildren()" title="Reset to Root">🏠</button>
+                    <button onclick="expandAll()" title="Expand All">📤</button>
+                    <button onclick="collapseAll()" title="Collapse All">📥</button>
+                    <button onclick="toggleSidebar()" title="Toggle Sidebar" id="sidebar-toggle">📋</button>
+                </div>
+                
+                <!-- Loading Overlay -->
+                <div id="loading" class="loading-overlay">
+                    <div>
+                        <div class="status-indicator loading"></div>
+                        Loading purchase hierarchy graph...
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Sidebar with Controls and Info -->
+            <div class="dag-sidebar">
+                <!-- Main Controls -->
+                <div class="controls-panel">
+                    <h3>🎛️ Graph Controls</h3>
+                    <button onclick="showRootChildren()">🏠 Show Root Children</button>
+                    <button onclick="fitToView()">🔍 Fit to View</button>
+                    <button onclick="expandAll()">📤 Expand All Nodes</button>
+                    <button onclick="collapseAll()">📥 Collapse All Nodes</button>
+                </div>
+                
+                <!-- Statistics -->
+                <div class="stats-panel">
+                    <h3>📊 Graph Statistics</h3>
+                    <div class="stat-item">
+                        <span>Visible Nodes:</span> 
+                        <span id="visible-nodes">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span>Total Nodes:</span> 
+                        <span id="total-nodes">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span>Visible Edges:</span> 
+                        <span id="visible-edges">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span>Root Children:</span> 
+                        <span id="root-children">16</span>
+                    </div>
+                </div>
+                
+                <!-- Legend -->
+                <div class="legend">
+                    <h3>🎨 Node Types</h3>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: #667eea;"></div> 
+                        Root Node
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: #4caf50;"></div> 
+                        OK Node
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: #f44336;"></div> 
+                        Bogus Node
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: #ff9800;"></div> 
+                        Missing File
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: #9c27b0;"></div> 
+                        High Purchase (>1 Cr)
+                    </div>
+                </div>
+                
+                <!-- Instructions -->
+                <div class="instructions">
+                    <h3>💡 How to Explore</h3>
+                    <p><strong>Click on a node</strong> to expand or collapse its children.</p>
+                    <p><strong>Hover</strong> over a node to see detailed information.</p>
+                    <p><strong>Drag</strong> to pan around the graph.</p>
+                    <p><strong>Scroll</strong> to zoom in/out.</p>
+                    <p><strong>Double-click</strong> to focus on a specific node.</p>
+                    <p><strong>Use controls</strong> above for quick navigation.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/dag.js') }}"></script>
+
+</body>
+</html>

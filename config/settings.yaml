@@ -1,0 +1,64 @@
+# GST Analysis System Configuration
+# Default settings for the analysis system
+
+# Data directories
+data_directory: "../ai"
+output_directory: "data/output"
+cache_directory: "data/cache"
+
+# File settings
+root_file: "AAYCA4390A_tasAggregatedGst_13092025_10_40_23.xlsx"
+data_start_row: 19
+
+# Column mapping (0-indexed Excel columns)
+column_mapping:
+  info_code: 1      # Column B - Information Code (GSTR1-R/GSTR1-P)
+  pan: 3            # Column D - Party PAN
+  amount: 7         # Column H - Aggregated Transaction Value
+  party_name: 4     # Column E - Party Name
+  taxpayer_type: 5  # Column F - Taxpayer Type
+  business_nature: 9 # Column J - Nature of Business
+  turnover_range: 10 # Column K - Turnover range
+  income_range: 11  # Column L - Income range
+
+# Analysis parameters
+bogus_threshold: 0.5    # Threshold for bogus transaction detection
+risk_threshold: 70.0    # Risk score threshold for high-risk classification
+
+# Processing settings
+enable_caching: true
+max_cache_size: 10000
+continue_on_file_error: true
+skip_invalid_rows: true
+
+# Output settings
+excel_filename: "gst_analysis_results.xlsx"
+report_filename: "gst_analysis_report.txt"
+json_filename: "gst_table_data.json"
+
+# Logging settings
+log_level: "INFO"
+log_to_file: true
+log_filename: "gst_analysis.log"
+
+# Web interface settings
+web_host: "localhost"
+web_port: 8000
+web_debug: false
+
+# Root node configuration for purchase hierarchy
+root_node_pan: "AAYCA4390A"  # Configurable root node PAN
+# Note: Children are dynamically fetched from the root file data
+
+# Risk scoring weights
+risk_factors:
+  purchase_sales_ratio: 0.4
+  transaction_volume: 0.3
+  file_availability: 0.2
+  children_complexity: 0.1
+
+# Currency formatting
+currency:
+  format: "indian"  # indian, international
+  precision: 2
+  show_currency_symbol: true

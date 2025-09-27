@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GST Purchase Hierarchy Analysis</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/hierarchy.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/common.css') }}">
+</head>
+<body>
+
+<div class="container">
+    <!-- Header Section -->
+    <div class="header">
+        <h1>GST Purchase Hierarchy Analysis</h1>
+        <p id="header-description">Root Node: Loading... → Dynamic Children → Expandable Hierarchy</p>
+    </div>
+    
+    <!-- Navigation -->
+    <nav class="navigation">
+        <a href="{{ url_for('dashboard') }}" class="nav-link">Dashboard</a>
+        <a href="{{ url_for('hierarchy') }}" class="nav-link active">Hierarchy View</a>
+        <a href="{{ url_for('dag') }}" class="nav-link">DAG Visualization</a>
+    </nav>
+    
+    <!-- Filters Section -->
+    <div class="filters">
+        <div class="filter-group">
+            <span class="filter-label">Min Purchase Value:</span>
+            <input type="number" id="minPurchase" class="filter-input" placeholder="e.g., 1000000">
+        </div>
+        <div class="filter-group">
+            <span class="filter-label">Min Sales Value:</span>
+            <input type="number" id="minSales" class="filter-input" placeholder="e.g., 1000000">
+        </div>
+        <div class="filter-group">
+            <span class="filter-label">Status:</span>
+            <select id="statusFilter" class="filter-input">
+                <option value="">All</option>
+                <option value="bogus">Bogus Only</option>
+                <option value="ok">OK Only</option>
+                <option value="missing">Missing Files Only</option>
+            </select>
+        </div>
+        <button class="filter-button" onclick="applyFilters()">Apply Filters</button>
+        <button class="filter-button" onclick="clearFilters()" style="background: #6c757d;">Clear</button>
+    </div>
+    
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="section-title" id="section-title">Children of Root Node AAYCA4390A (15)</div>
+        <div id="content">
+            <div class="loading">Loading purchase hierarchy...</div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/hierarchy.js') }}"></script>
+
+</body>
+</html>
