@@ -38,16 +38,16 @@ async function loadDashboardData() {
             showError('Failed to load summary data: ' + (errorData.error || 'Unknown error'));
         }
         
-        // Load high risk entities
-        const highRiskResponse = await fetch('/api/analysis/high-risk');
-        if (highRiskResponse.ok) {
-            const highRisk = await highRiskResponse.json();
-            console.log('High risk data loaded:', highRisk.length, 'entities');
-            updateHighRiskTable(highRisk);
+        // Load high contamination entities
+        const highContaminationResponse = await fetch('/api/analysis/high-contamination');
+        if (highContaminationResponse.ok) {
+            const highContamination = await highContaminationResponse.json();
+            console.log('High contamination data loaded:', highContamination.length, 'entities');
+            updateHighContaminationTable(highContamination);
         } else {
-            const errorData = await highRiskResponse.json().catch(() => ({ error: 'Unknown error' }));
-            console.error('Failed to load high risk data:', errorData);
-            showError('Failed to load high risk data: ' + (errorData.error || 'Unknown error'));
+            const errorData = await highContaminationResponse.json().catch(() => ({ error: 'Unknown error' }));
+            console.error('Failed to load high contamination data:', errorData);
+            showError('Failed to load high contamination data: ' + (errorData.error || 'Unknown error'));
         }
         
         // Hide loading state
@@ -64,14 +64,13 @@ async function loadDashboardData() {
 }
 
 function updateSummaryStats(summary) {
-    // Update stat cards
+    // Update key metric cards
     updateStatCard('total-nodes', summary.total_nodes || 0);
     updateStatCard('bogus-nodes', summary.bogus_nodes || 0);
+    updateStatCard('contaminated-nodes', summary.contaminated_nodes || 0);
+    updateStatCard('total-bogus-value', formatCurrency(summary.total_bogus_value || 0));
     updateStatCard('bogus-percentage', (summary.bogus_percentage || 0).toFixed(1) + '%');
-    updateStatCard('high-risk-nodes', summary.high_risk_nodes || 0);
-    updateStatCard('total-sales', formatCurrency(summary.total_sales || 0));
     updateStatCard('total-purchases', formatCurrency(summary.total_purchases || 0));
-    updateStatCard('ps-ratio', (summary.overall_ps_ratio || 0).toFixed(3));
 }
 
 function updateStatCard(id, value) {
@@ -82,30 +81,30 @@ function updateStatCard(id, value) {
 }
 
 function createCharts(summary) {
-    // Risk Distribution Pie Chart
-    if (summary.risk_distribution) {
-        createRiskDistributionChart(summary.risk_distribution);
+    // Contamination Distribution Pie Chart
+    if (summary.contamination_distribution) {
+        createContaminationDistributionChart(summary.contamination_distribution);
     }
     
     // Bogus vs Normal Doughnut Chart
     createBogusChart(summary.bogus_nodes, summary.total_nodes - summary.bogus_nodes);
 }
 
-function createRiskDistributionChart(riskData) {
-    const ctx = document.getElementById('riskChart');
+function createContaminationDistributionChart(contaminationData) {
+    const ctx = document.getElementById('contaminationChart');
     if (!ctx) return;
     
     // Destroy existing chart if it exists
-    if (window.riskChart && typeof window.riskChart.destroy === 'function') {
-        window.riskChart.destroy();
+    if (window.contaminationChart && typeof window.contaminationChart.destroy === 'function') {
+        window.contaminationChart.destroy();
     }
     
     const data = {
-        labels: Object.keys(riskData),
+        labels: Object.keys(contaminationData),
         datasets: [{
-            data: Object.values(riskData),
+            data: Object.values(contaminationData),
             backgroundColor: [
-                '#2ecc71', // Very Low - Green
+                '#2ecc71', // None - Green
                 '#f39c12', // Low - Orange  
                 '#e67e22', // Medium - Dark Orange
                 '#e74c3c', // High - Red
@@ -116,7 +115,7 @@ function createRiskDistributionChart(riskData) {
         }]
     };
     
-    window.riskChart = new Chart(ctx, {
+    window.contaminationChart = new Chart(ctx, {
         type: 'pie',
         data: data,
         options: {
@@ -127,7 +126,7 @@ function createRiskDistributionChart(riskData) {
                 },
                 title: {
                     display: true,
-                    text: 'Risk Score Distribution'
+                    text: 'Contamination Level Distribution'
                 }
             }
         }
@@ -171,39 +170,42 @@ function createBogusChart(bogusCount, normalCount) {
     });
 }
 
-function updateHighRiskTable(highRiskData) {
-    const tbody = document.querySelector('#high-risk-table tbody');
+function updateHighContaminationTable(highContaminationData) {
+    const tbody = document.querySelector('#high-contamination-table tbody');
     if (!tbody) return;
     
     tbody.innerHTML = '';
     
-    if (!highRiskData || highRiskData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">No high risk entities found</td></tr>';
+    if (!highContaminationData || highContaminationData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No high contamination entities found</td></tr>';
         return;
     }
     
-    highRiskData.slice(0, 10).forEach(entity => {
+    highContaminationData.slice(0, 10).forEach(entity => {
         const row = document.createElement('tr');
         const entityName = entity.Entity_Name || entity.PAN || 'N/A';
         const displayName = entityName.length > 30 ? entityName.substring(0, 30) + '...' : entityName;
+        const status = entity.Is_Bogus ? 'BOGUS' : (entity.Is_Contaminated ? 'CONTAMINATED' : 'OK');
+        const statusClass = entity.Is_Bogus ? 'status-bogus' : (entity.Is_Contaminated ? 'status-contaminated' : 'status-ok');
         
         row.innerHTML = `
+            <td title="${entity.PAN}">${entity.PAN}</td>
             <td title="${entityName}">${displayName}</td>
-            <td>${formatCurrency(entity.Total_Sales || 0)}</td>
-            <td>${formatCurrency(entity.Total_Purchases || 0)}</td>
+            <td><span class="contamination-level contamination-${getContaminationLevel(entity.Contamination_Level)}">${(entity.Contamination_Level || 0).toFixed(1)}%</span></td>
+            <td>${formatCurrency(entity.Bogus_Value || 0)}</td>
             <td>${(entity.Purchase_to_Sales_Ratio || 0).toFixed(3)}</td>
-            <td><span class="risk-score risk-${getRiskLevel(entity.Risk_Score)}">${(entity.Risk_Score || 0).toFixed(1)}</span></td>
+            <td><span class="status ${statusClass}">${status}</span></td>
         `;
         tbody.appendChild(row);
     });
 }
 
-function getRiskLevel(score) {
-    if (score >= 80) return 'very-high';
-    if (score >= 60) return 'high';
-    if (score >= 40) return 'medium';
-    if (score >= 20) return 'low';
-    return 'very-low';
+function getContaminationLevel(level) {
+    if (level >= 80) return 'very-high';
+    if (level >= 60) return 'high';
+    if (level >= 40) return 'medium';
+    if (level >= 20) return 'low';
+    return 'none';
 }
 
 function formatCurrency(amount) {
@@ -219,20 +221,34 @@ function formatCurrency(amount) {
 }
 
 function showError(message) {
-    console.error('Dashboard error:', message);
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'error';
-    errorDiv.style.cssText = 'background: #fee; color: #c33; padding: 15px; border-radius: 8px; margin: 20px; border: 1px solid #fcc;';
-    errorDiv.textContent = message;
+    console.error(message);
     
-    const container = document.querySelector('.container');
-    if (container) {
-        container.insertBefore(errorDiv, container.firstChild);
-        
-        // Remove error after 5 seconds
-        setTimeout(() => {
-            errorDiv.remove();
-        }, 5000);
+    // Create or update error display
+    let errorDiv = document.getElementById('error-message');
+    if (!errorDiv) {
+        errorDiv = document.createElement('div');
+        errorDiv.id = 'error-message';
+        errorDiv.className = 'error-message';
+        document.querySelector('.container').insertBefore(errorDiv, document.querySelector('.summary-cards'));
+    }
+    
+    errorDiv.innerHTML = `
+        <div class="error-content">
+            <span class="error-icon">⚠️</span>
+            <span class="error-text">${message}</span>
+            <button class="error-close" onclick="hideError()">×</button>
+        </div>
+    `;
+    errorDiv.style.display = 'block';
+    
+    // Auto-hide after 10 seconds
+    setTimeout(hideError, 10000);
+}
+
+function hideError() {
+    const errorDiv = document.getElementById('error-message');
+    if (errorDiv) {
+        errorDiv.style.display = 'none';
     }
 }
 

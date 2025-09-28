@@ -40,41 +40,112 @@ function initializeNetwork() {
             shape: 'dot',
             size: 20,
             font: {
-                size: 12,
-                color: '#000000'
+                size: 13,
+                color: '#333333',
+                face: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                strokeWidth: 2,
+                strokeColor: '#ffffff'
             },
-            borderWidth: 2,
-            shadow: true
+            borderWidth: 3,
+            shadow: {
+                enabled: true,
+                color: 'rgba(0,0,0,0.2)',
+                size: 8,
+                x: 2,
+                y: 2
+            },
+            scaling: {
+                min: 15,
+                max: 40
+            }
         },
         edges: {
-            width: 2,
-            color: {inherit: 'from'},
+            width: 3,
+            color: {
+                color: '#848484',
+                highlight: '#667eea',
+                hover: '#667eea'
+            },
             smooth: {
-                type: 'continuous'
+                enabled: true,
+                type: 'dynamic',
+                roundness: 0.5
             },
             arrows: {
-                to: {enabled: true, scaleFactor: 1, type: 'arrow'}
+                to: {
+                    enabled: true, 
+                    scaleFactor: 1.2, 
+                    type: 'arrow'
+                }
+            },
+            shadow: {
+                enabled: true,
+                color: 'rgba(0,0,0,0.1)',
+                size: 5,
+                x: 1,
+                y: 1
             }
         },
         physics: {
             enabled: true,
-            stabilization: {iterations: 100}
+            stabilization: {
+                iterations: 150,
+                updateInterval: 25
+            },
+            barnesHut: {
+                gravitationalConstant: -8000,
+                centralGravity: 0.3,
+                springLength: 120,
+                springConstant: 0.04,
+                damping: 0.09,
+                avoidOverlap: 0.1
+            }
         },
         interaction: {
             hover: true,
-            tooltipDelay: 200
+            tooltipDelay: 0,
+            hideEdgesOnDrag: false,
+            hideNodesOnDrag: false
+        },
+        configure: {
+            enabled: false
         },
         layout: {
             hierarchical: {
+                enabled: true,
                 direction: 'UD',
                 sortMethod: 'directed',
-                levelSeparation: 100,
-                nodeSpacing: 150
+                levelSeparation: 120,
+                nodeSpacing: 180,
+                treeSpacing: 200,
+                blockShifting: true,
+                edgeMinimization: true,
+                parentCentralization: true
             }
         }
     };
 
     network = new vis.Network(container, data, options);
+    
+    // Create custom tooltip element
+    const tooltip = document.createElement('div');
+    tooltip.className = 'custom-tooltip';
+    tooltip.style.cssText = `
+        position: absolute;
+        background: #fff;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+        padding: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        max-width: 350px;
+        z-index: 1000;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+        display: none;
+    `;
+    container.appendChild(tooltip);
     
     // Add event listeners
     network.on('click', function(params) {
@@ -85,8 +156,15 @@ function initializeNetwork() {
     });
     
     network.on('hoverNode', function(params) {
-        showNodeTooltip(params.node);
+        showCustomTooltip(params.node, params.event);
     });
+    
+    network.on('blurNode', function(params) {
+        hideCustomTooltip();
+    });
+    
+    // Hide tooltip when mouse leaves the network
+    container.addEventListener('mouseleave', hideCustomTooltip);
 }
 
 async function loadGraphData() {
@@ -145,7 +223,6 @@ function processGraphData(data) {
         const node = {
             id: item.PAN,
             label: displayLabel,
-            title: createNodeTooltip(item),
             color: getNodeColor(item),
             size: getNodeSize(item),
             data: item
@@ -172,33 +249,133 @@ function processGraphData(data) {
 
 function createNodeTooltip(item) {
     const entityName = item.Entity_Name || item.PAN;
-    return `
-        <div style="padding: 10px; max-width: 300px;">
-            <strong>Entity:</strong> ${entityName}<br>
-            <strong>PAN:</strong> ${item.PAN}<br>
-            <strong>Sales:</strong> ${formatCurrency(item.Total_Sales)}<br>
-            <strong>Purchases:</strong> ${formatCurrency(item.Total_Purchases)}<br>
-            <strong>P/S Ratio:</strong> ${(item.Purchase_to_Sales_Ratio || 0).toFixed(3)}<br>
-            <strong>Risk Score:</strong> ${(item.Risk_Score || 0).toFixed(1)}<br>
-            <strong>Status:</strong> ${item.Is_Bogus ? 'BOGUS' : 'OK'}<br>
-            <strong>Transactions:</strong> ${item.Transaction_Count || 0}
+    const status = getNodeStatus(item);
+    const statusClass = status.toLowerCase().replace(' ', '-');
+    
+    // Create clean HTML without embedded HTML elements
+    const tooltipHTML = `
+        <div class="tooltip-header">
+            ${entityName}
+        </div>
+        <div class="tooltip-body">
+            <div class="tooltip-row">
+                <span class="tooltip-label">PAN:</span>
+                <span class="tooltip-value">${item.PAN}</span>
+            </div>
+            <div class="tooltip-row">
+                <span class="tooltip-label">Sales:</span>
+                <span class="tooltip-value">${formatCurrency(item.Total_Sales || 0)}</span>
+            </div>
+            <div class="tooltip-row">
+                <span class="tooltip-label">Purchases:</span>
+                <span class="tooltip-value">${formatCurrency(item.Total_Purchases || 0)}</span>
+            </div>
+            <div class="tooltip-row">
+                <span class="tooltip-label">Bogus Purchases:</span>
+                <span class="tooltip-value">${formatCurrency(item.Bogus_Value || 0)}</span>
+            </div>
+            <div class="tooltip-row">
+                <span class="tooltip-label">P/S Ratio:</span>
+                <span class="tooltip-value">${(item.Purchase_to_Sales_Ratio || 0).toFixed(3)}</span>
+            </div>
+            <div class="tooltip-row">
+                <span class="tooltip-label">Contamination:</span>
+                <span class="tooltip-value">${(item.Contamination_Level || 0).toFixed(1)}%</span>
+            </div>
+            <div class="tooltip-row">
+                <span class="tooltip-label">Transactions:</span>
+                <span class="tooltip-value">${item.Transaction_Count || 0}</span>
+            </div>
+            <div class="tooltip-row">
+                <span class="tooltip-label">Status:</span>
+                <span class="tooltip-status ${statusClass}">${status}</span>
+            </div>
         </div>
     `;
+    
+    return tooltipHTML;
 }
 
 function getNodeColor(item) {
-    if (item.PAN === ROOT_NODE_PAN) return '#667eea'; // Root node
-    if (item.Is_Bogus) return '#f44336'; // Bogus
-    if (item.Total_Purchases > 10000000) return '#9c27b0'; // High purchase
-    return '#4caf50'; // OK
+    // Root node - special blue gradient
+    if (item.PAN === ROOT_NODE_PAN) {
+        return {
+            background: '#667eea',
+            border: '#5a6fd8',
+            highlight: {
+                background: '#5a6fd8',
+                border: '#4c63d2'
+            }
+        };
+    }
+    
+    // Bogus nodes - red gradient (matching hierarchy page)
+    if (item.Is_Bogus) {
+        return {
+            background: '#f44336',
+            border: '#d32f2f',
+            highlight: {
+                background: '#e53935',
+                border: '#c62828'
+            }
+        };
+    }
+    
+    // Contaminated nodes - orange gradient (matching hierarchy page)
+    if (item.Is_Contaminated) {
+        return {
+            background: '#ff9800',
+            border: '#f57c00',
+            highlight: {
+                background: '#fb8c00',
+                border: '#ef6c00'
+            }
+        };
+    }
+    
+    // Check if node data is missing (no file available)
+    if (!item.Entity_Name || item.Entity_Name === item.PAN) {
+        return {
+            background: '#9e9e9e',
+            border: '#757575',
+            highlight: {
+                background: '#757575',
+                border: '#616161'
+            }
+        };
+    }
+    
+    // OK nodes - green gradient (matching hierarchy page)
+    return {
+        background: '#4caf50',
+        border: '#388e3c',
+        highlight: {
+            background: '#43a047',
+            border: '#2e7d32'
+        }
+    };
 }
 
 function getNodeSize(item) {
+    // Root node is always largest
+    if (item.PAN === ROOT_NODE_PAN) return 35;
+    
     const purchases = item.Total_Purchases || 0;
-    if (purchases > 100000000) return 30;
-    if (purchases > 10000000) return 25;
-    if (purchases > 1000000) return 20;
-    return 15;
+    
+    // Size based on purchase volume
+    if (purchases > 500000000) return 30;      // >50Cr
+    if (purchases > 100000000) return 25;      // >10Cr
+    if (purchases > 50000000) return 22;       // >5Cr
+    if (purchases > 10000000) return 20;       // >1Cr
+    if (purchases > 1000000) return 18;        // >10L
+    return 15;                                 // Default
+}
+
+function getNodeStatus(item) {
+    if (item.Is_Bogus) return 'BOGUS';
+    if (item.Is_Contaminated) return 'CONTAMINATED';
+    if (!item.Entity_Name || item.Entity_Name === item.PAN) return 'MISSING';
+    return 'OK';
 }
 
 function showRootChildren() {
@@ -336,11 +513,48 @@ function updateStats() {
     document.getElementById('root-children').textContent = rootChildren;
 }
 
-function showNodeTooltip(nodeId) {
+function showCustomTooltip(nodeId, event) {
     const node = allNodes.get(nodeId);
-    if (node && node.data) {
-        // Tooltip is handled by vis.js title property
-        console.log('Showing tooltip for:', nodeId);
+    if (!node || !node.data) return;
+    
+    const tooltip = document.querySelector('.custom-tooltip');
+    if (!tooltip) return;
+    
+    // Create tooltip content
+    tooltip.innerHTML = createNodeTooltip(node.data);
+    
+    // Position tooltip
+    const rect = document.getElementById('mynetwork').getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    
+    tooltip.style.left = (x + 15) + 'px';
+    tooltip.style.top = (y - 10) + 'px';
+    tooltip.style.display = 'block';
+    tooltip.style.opacity = '1';
+    
+    // Adjust position if tooltip goes off screen
+    setTimeout(() => {
+        const tooltipRect = tooltip.getBoundingClientRect();
+        const containerRect = document.getElementById('mynetwork').getBoundingClientRect();
+        
+        if (tooltipRect.right > containerRect.right) {
+            tooltip.style.left = (x - tooltipRect.width - 15) + 'px';
+        }
+        
+        if (tooltipRect.bottom > containerRect.bottom) {
+            tooltip.style.top = (y - tooltipRect.height + 10) + 'px';
+        }
+    }, 10);
+}
+
+function hideCustomTooltip() {
+    const tooltip = document.querySelector('.custom-tooltip');
+    if (tooltip) {
+        tooltip.style.opacity = '0';
+        setTimeout(() => {
+            tooltip.style.display = 'none';
+        }, 200);
     }
 }
 

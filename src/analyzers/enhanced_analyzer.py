@@ -40,13 +40,17 @@ class NodeData:
     pan: str
     total_sales: float = 0.0
     total_purchases: float = 0.0
+    original_total_purchases: float = 0.0  # Store original before contamination adjustment
     purchase_to_sales_ratio: float = 0.0
-    is_bogus: bool = False
-    children: Set[str] = None
-    parents: Set[str] = None
     transaction_count: int = 0
     avg_transaction_size: float = 0.0
-    risk_score: float = 0.0
+    is_bogus: bool = False
+    bogus_value: float = 0.0  # Sum of purchases from bogus children
+    is_contaminated: bool = False  # True if all/majority children are bogus
+    contamination_level: float = 0.0  # Percentage of bogus children
+    adjusted_purchases: float = 0.0  # Purchases after removing bogus amounts
+    children: Set[str] = None
+    parents: Set[str] = None
     
     def __post_init__(self):
         if self.children is None:
@@ -252,49 +256,415 @@ class EnhancedAnalyzer:
         
         return total_sales, total_purchases, transaction_count
     
-    def _calculate_risk_score(self, node_data: NodeData) -> float:
+    
+    def _calculate_bogus_values(self, results: Dict[str, NodeData]) -> None:
         """
-        Calculate risk score based on multiple factors
+        Calculate bogus values and perform contamination analysis for all nodes.
+        
+{{ ... }}
+        Args:
+            results: Dictionary of all processed nodes
+        """
+        logger.info("Calculating bogus values and contamination analysis...")
+        
+        # For each node, find the actual purchase amounts paid to bogus children
+        for pan, node_data in results.items():
+            bogus_value = 0.0
+            bogus_purchase_amounts = {}  # Track individual bogus child purchase amounts
+            
+            # Store original total purchases before any adjustments
+            node_data.original_total_purchases = node_data.total_purchases
+            
+            # Read the node's own file to get transaction details
+            if pan in self.file_mapping:
+                data_dir = self.config.get('data_directory', 'data/input')
+                file_path = os.path.join(data_dir, self.file_mapping[pan])
+                
+                try:
+                    records = self._read_excel_data(file_path)
+                    
+                    # Check each transaction record
+                    for record in records:
+                        # If this record is a purchase (GSTR1-P) from a bogus child
+                        if (record.transaction_type == 'GSTR1-P' and 
+                            record.pan in node_data.children and
+                            record.pan in results and
+                            results[record.pan].is_bogus):
+                            
+                            # Add the actual purchase amount paid to this bogus child
+                            bogus_value += record.amount
+                            bogus_purchase_amounts[record.pan] = bogus_purchase_amounts.get(record.pan, 0) + record.amount
+                            logger.debug(f"Node {pan}: Added ₹{record.amount:,.2f} purchase from bogus child {record.pan}")
+                            
+                except Exception as e:
+                    logger.warning(f"Could not read file for {pan} to calculate bogus value: {e}")
+            
+            # Perform contamination analysis
+            self._analyze_contamination(node_data, results, bogus_value, bogus_purchase_amounts)
+        
+        # Additional step: Mark nodes as bogus if bogus exposure >= 50%
+        self._mark_high_exposure_as_bogus(results)
+        
+        # Additional step: Mark nodes as bogus if they have sales but no/minimal purchases
+        self._mark_sales_without_purchases_as_bogus(results)
+        
+        # Additional step: Mark nodes as bogus based on abnormal P/S ratios
+        self._mark_abnormal_ps_ratio_as_bogus(results)
+        
+        # Final step: Recalculate bogus values after all bogus detection methods
+        self._recalculate_bogus_values(results)
+        
+        # Final step: Recalculate contamination levels after all bogus detection methods
+        self._recalculate_contamination_levels(results)
+        
+        # Log summary
+        nodes_with_bogus_value = sum(1 for node in results.values() if node.bogus_value > 0)
+        contaminated_nodes = sum(1 for node in results.values() if node.is_contaminated)
+        total_bogus_value = sum(node.bogus_value for node in results.values())
+        
+        logger.info(f"Bogus value calculation complete: {nodes_with_bogus_value} nodes have bogus values totaling ₹{total_bogus_value:,.2f}")
+        logger.info(f"Contamination analysis complete: {contaminated_nodes} nodes are contaminated (all/majority children bogus)")
+    
+    def _analyze_contamination(self, node_data: NodeData, results: Dict[str, NodeData], 
+                              bogus_value: float, bogus_purchase_amounts: Dict[str, float]) -> None:
+        """
+        Analyze contamination based on the value of purchases from bogus children.
+        Update bogus value by aggregating purchases from bogus children regardless of parent's P/S ratio.
         
         Args:
-            node_data: NodeData object
-            
-        Returns:
-            Risk score (0-100)
+            node_data: The node to analyze
+            results: All processed nodes
+            bogus_value: Total bogus value calculated from purchases to bogus children
+            bogus_purchase_amounts: Individual purchase amounts to bogus children
         """
-        risk_score = 0.0
+        if not node_data.children:
+            # No children, no contamination
+            node_data.bogus_value = bogus_value
+            node_data.adjusted_purchases = node_data.total_purchases
+            node_data.contamination_level = 0.0
+            node_data.is_contaminated = False
+            return
         
-        # Factor 1: Purchase/Sales ratio
-        if node_data.total_sales > 0:
-            ratio = node_data.purchase_to_sales_ratio
-            if ratio < 0.1:
-                risk_score += 40  # Very low purchases
-            elif ratio < 0.3:
-                risk_score += 30
-            elif ratio < 0.5:
-                risk_score += 20
+        # Calculate total purchases to all children (for contamination percentage)
+        total_purchases_to_children = 0.0
+        bogus_purchases_to_children = 0.0
+        
+        # We need to calculate purchases to ALL children, not just bogus ones
+        # The bogus_purchase_amounts only contains purchases to bogus children
+        # So we need to read the actual transaction data to get total purchases to all children
+        
+        # For now, use the bogus_purchase_amounts as a proxy for total purchases to children
+        # This assumes that most significant purchases are captured in the bogus analysis
+        for child_pan in node_data.children:
+            if child_pan in bogus_purchase_amounts:
+                purchase_amount = bogus_purchase_amounts[child_pan]
+                total_purchases_to_children += purchase_amount
+                
+                # If child is bogus, add to bogus purchases
+                if child_pan in results and results[child_pan].is_bogus:
+                    bogus_purchases_to_children += purchase_amount
+        
+        # Set bogus value to the aggregated purchases from bogus children (regardless of parent's P/S ratio)
+        node_data.bogus_value = bogus_value
+        
+        # Calculate contamination level based on bogus value vs total purchases
+        # This gives us the percentage of total purchases that are bogus
+        # Note: This will be recalculated later after all bogus detection methods are applied
+        if node_data.total_purchases > 0:
+            contamination_level = (bogus_value / node_data.total_purchases) * 100
         else:
-            if node_data.total_purchases > 0:
-                risk_score += 50  # Purchases without sales
+            contamination_level = 100
         
-        # Factor 2: Transaction volume (in crores)
-        total_volume = node_data.total_sales + node_data.total_purchases
-        if total_volume > 1e9:  # > 100 crores
-            risk_score += 15
-        elif total_volume > 1e8:  # > 10 crores
-            risk_score += 10
+        node_data.contamination_level = contamination_level
         
-        # Factor 3: Number of children (complexity)
-        if len(node_data.children) > 10:
-            risk_score += 10
-        elif len(node_data.children) > 5:
-            risk_score += 5
+        # Check if node is contaminated (>50% of purchase value goes to bogus children)
+        is_contaminated = contamination_level > 10.0
+        node_data.is_contaminated = is_contaminated
         
-        # Factor 4: Average transaction size (in crores)
-        if node_data.avg_transaction_size > 1e8:  # > 10 crores per transaction
-            risk_score += 10
+        if is_contaminated:
+            # Node is contaminated - adjust purchases and P/S ratio
+            bogus_children = [child_pan for child_pan in node_data.children 
+                             if child_pan in results and results[child_pan].is_bogus]
+            total_children = len(node_data.children)
+            bogus_children_count = len(bogus_children)
+            
+            logger.info(f"Node {node_data.pan} is CONTAMINATED: {contamination_level:.1f}% of purchases (₹{bogus_purchases_to_children:,.2f}/₹{total_purchases_to_children:,.2f}) go to {bogus_children_count}/{total_children} bogus children")
+            
+            # Remove bogus purchases from total purchases
+            adjusted_purchases = node_data.total_purchases - bogus_value
+            node_data.adjusted_purchases = max(0, adjusted_purchases)  # Ensure non-negative
+            
+            # Recalculate P/S ratio with adjusted purchases
+            if node_data.total_sales > 0:
+                node_data.purchase_to_sales_ratio = node_data.adjusted_purchases / node_data.total_sales
+            else:
+                node_data.purchase_to_sales_ratio = float('inf') if node_data.adjusted_purchases > 0 else 0
+            
+            logger.debug(f"Node {node_data.pan}: Original purchases ₹{node_data.total_purchases:,.2f} → "
+                        f"Adjusted purchases ₹{node_data.adjusted_purchases:,.2f} (removed ₹{bogus_value:,.2f} bogus)")
+        else:
+            # Node is not contaminated - keep original values but track bogus value
+            node_data.adjusted_purchases = node_data.total_purchases
+            
+            if bogus_value > 0:
+                bogus_children_count = len([child_pan for child_pan in node_data.children 
+                                          if child_pan in results and results[child_pan].is_bogus])
+                total_children = len(node_data.children)
+                
+                logger.debug(f"Node {node_data.pan}: Not contaminated ({contamination_level:.1f}% contamination), "
+                           f"but tracking ₹{bogus_value:,.2f} bogus value from {bogus_children_count}/{total_children} bogus children")
+    
+    def _mark_high_exposure_as_bogus(self, results: Dict[str, NodeData]) -> None:
+        """
+        Mark nodes as bogus if their bogus exposure is >= 50% of total purchases.
         
-        return min(risk_score, 100.0)  # Cap at 100
+        Args:
+            results: Dictionary of all processed nodes
+        """
+        logger.info("Checking for high bogus exposure nodes (≥50%) to mark as bogus...")
+        
+        newly_marked_bogus = 0
+        
+        for pan, node_data in results.items():
+            # Skip if already marked as bogus
+            if node_data.is_bogus:
+                continue
+                
+            # Check if bogus exposure >= 50%
+            if node_data.total_purchases > 0 and node_data.bogus_value > 0:
+                bogus_exposure_percentage = (node_data.bogus_value / node_data.total_purchases) * 100
+                
+                if bogus_exposure_percentage >= 50.0:
+                    # Mark as bogus due to high exposure
+                    node_data.is_bogus = True
+                    newly_marked_bogus += 1
+                    
+                    logger.info(f"Node {pan} marked as BOGUS due to high exposure: "
+                              f"₹{node_data.bogus_value:,.2f} / ₹{node_data.total_purchases:,.2f} ({bogus_exposure_percentage:.1f}%)")
+        
+        if newly_marked_bogus > 0:
+            logger.info(f"Marked {newly_marked_bogus} additional nodes as bogus due to high exposure (≥50%)")
+        else:
+            logger.info("No additional nodes marked as bogus due to high exposure")
+    
+    def _mark_sales_without_purchases_as_bogus(self, results: Dict[str, NodeData]) -> None:
+        """
+        Mark nodes as bogus if they have sales but no purchases.
+        For such nodes, set the entire sales value as bogus value.
+        
+        Args:
+            results: Dictionary of all processed nodes
+        """
+        logger.info("Checking for nodes with sales but no purchases...")
+        
+        newly_marked_bogus = 0
+        total_sales_marked_bogus = 0
+        updated_bogus_values = 0
+        
+        for pan, node_data in results.items():
+            # Check if node has sales but NO purchases (exactly 0)
+            if node_data.total_sales > 0 and node_data.total_purchases == 0:
+                
+                # Set the entire sales value as bogus value
+                original_bogus_value = node_data.bogus_value
+                node_data.bogus_value = node_data.total_sales
+                
+                if not node_data.is_bogus:
+                    # Mark as bogus if not already marked
+                    node_data.is_bogus = True
+                    newly_marked_bogus += 1
+                    
+                    logger.info(f"Node {pan} marked as BOGUS due to sales without purchases: "
+                              f"Sales ₹{node_data.total_sales:,.2f}, Purchases ₹0. "
+                              f"Bogus value: ₹{original_bogus_value:,.2f} → ₹{node_data.bogus_value:,.2f}")
+                else:
+                    # Already bogus, just update bogus value
+                    updated_bogus_values += 1
+                    
+                    logger.info(f"Node {pan} (already bogus) updated bogus value due to sales without purchases: "
+                              f"Sales ₹{node_data.total_sales:,.2f}, Purchases ₹0. "
+                              f"Bogus value: ₹{original_bogus_value:,.2f} → ₹{node_data.bogus_value:,.2f}")
+                
+                total_sales_marked_bogus += node_data.total_sales
+        
+        if newly_marked_bogus > 0 or updated_bogus_values > 0:
+            logger.info(f"Sales-without-purchases processing complete:")
+            logger.info(f"  - Newly marked as bogus: {newly_marked_bogus} nodes")
+            logger.info(f"  - Updated bogus values: {updated_bogus_values} nodes")
+            logger.info(f"  - Total sales value set as bogus: ₹{total_sales_marked_bogus:,.2f}")
+        else:
+            logger.info("No nodes found with sales but no purchases")
+    
+    def _mark_abnormal_ps_ratio_as_bogus(self, results: Dict[str, NodeData]) -> None:
+        """
+        Mark nodes as bogus based on abnormal Purchase-to-Sales ratios:
+        - P/S ratio < 0.2 (purchases < 20% of sales): Mark sales value as bogus
+        - P/S ratio > 3.0 (purchases > 300% of sales): Mark purchase value as bogus
+        
+        Args:
+            results: Dictionary of all processed nodes
+        """
+        logger.info("Checking for nodes with abnormal P/S ratios...")
+        
+        low_ratio_nodes = 0  # P/S < 0.2
+        high_ratio_nodes = 0  # P/S > 3.0
+        total_sales_marked_bogus = 0
+        total_purchases_marked_bogus = 0
+        
+        for pan, node_data in results.items():
+            # Skip nodes with no sales or purchases
+            if node_data.total_sales <= 0 or node_data.total_purchases <= 0:
+                continue
+                
+            # Calculate P/S ratio
+            ps_ratio = node_data.total_purchases / node_data.total_sales
+            
+            # Check for abnormally low P/S ratio (< 0.2)
+            if ps_ratio < 0.2:
+                # Mark sales value as bogus (entity selling much more than purchasing)
+                original_bogus_value = node_data.bogus_value
+                
+                # Add sales value to existing bogus value (don't replace, accumulate)
+                node_data.bogus_value = max(node_data.bogus_value, node_data.total_sales)
+                
+                if not node_data.is_bogus:
+                    node_data.is_bogus = True
+                    low_ratio_nodes += 1
+                    
+                    logger.info(f"Node {pan} marked as BOGUS due to low P/S ratio: "
+                              f"P/S = {ps_ratio:.4f} (<0.2). Sales ₹{node_data.total_sales:,.2f} marked as bogus. "
+                              f"Bogus value: ₹{original_bogus_value:,.2f} → ₹{node_data.bogus_value:,.2f}")
+                else:
+                    # Already bogus, just update bogus value if sales is higher
+                    if node_data.total_sales > original_bogus_value:
+                        logger.info(f"Node {pan} (already bogus) updated bogus value due to low P/S ratio: "
+                                  f"P/S = {ps_ratio:.4f} (<0.2). "
+                                  f"Bogus value: ₹{original_bogus_value:,.2f} → ₹{node_data.bogus_value:,.2f}")
+                
+                total_sales_marked_bogus += node_data.total_sales
+            
+            # Check for abnormally high P/S ratio (> 3.0)
+            elif ps_ratio > 3.0:
+                # Mark purchase value as bogus (entity purchasing much more than selling)
+                original_bogus_value = node_data.bogus_value
+                
+                # Add purchase value to existing bogus value (don't replace, accumulate)
+                node_data.bogus_value = max(node_data.bogus_value, node_data.total_purchases)
+                
+                if not node_data.is_bogus:
+                    node_data.is_bogus = True
+                    high_ratio_nodes += 1
+                    
+                    logger.info(f"Node {pan} marked as BOGUS due to high P/S ratio: "
+                              f"P/S = {ps_ratio:.4f} (>3.0). Purchases ₹{node_data.total_purchases:,.2f} marked as bogus. "
+                              f"Bogus value: ₹{original_bogus_value:,.2f} → ₹{node_data.bogus_value:,.2f}")
+                else:
+                    # Already bogus, just update bogus value if purchases is higher
+                    if node_data.total_purchases > original_bogus_value:
+                        logger.info(f"Node {pan} (already bogus) updated bogus value due to high P/S ratio: "
+                                  f"P/S = {ps_ratio:.4f} (>3.0). "
+                                  f"Bogus value: ₹{original_bogus_value:,.2f} → ₹{node_data.bogus_value:,.2f}")
+                
+                total_purchases_marked_bogus += node_data.total_purchases
+        
+        if low_ratio_nodes > 0 or high_ratio_nodes > 0:
+            logger.info(f"Abnormal P/S ratio processing complete:")
+            logger.info(f"  - Low P/S ratio nodes (P/S < 0.2): {low_ratio_nodes} nodes")
+            logger.info(f"  - High P/S ratio nodes (P/S > 3.0): {high_ratio_nodes} nodes")
+            logger.info(f"  - Total sales value marked as bogus: ₹{total_sales_marked_bogus:,.2f}")
+            logger.info(f"  - Total purchases value marked as bogus: ₹{total_purchases_marked_bogus:,.2f}")
+        else:
+            logger.info("No nodes found with abnormal P/S ratios")
+    
+    def _recalculate_contamination_levels(self, results: Dict[str, NodeData]) -> None:
+        """
+        Recalculate contamination levels after all bogus detection methods have been applied.
+        This ensures contamination percentages reflect the final bogus values from all sources.
+        
+        Args:
+            results: Dictionary of all processed nodes
+        """
+        logger.info("Recalculating contamination levels after all bogus detection methods...")
+        
+        contamination_updates = 0
+        
+        for pan, node_data in results.items():
+            if node_data.total_purchases > 0 and node_data.bogus_value > 0:
+                # Calculate final contamination level based on final bogus value
+                final_contamination_level = min(100.0, (node_data.bogus_value / node_data.total_purchases) * 100)
+                
+                # Update if different from current contamination level
+                if abs(final_contamination_level - node_data.contamination_level) > 0.1:
+                    original_contamination = node_data.contamination_level
+                    node_data.contamination_level = final_contamination_level
+                    
+                    # Update contamination status
+                    original_contaminated = node_data.is_contaminated
+                    node_data.is_contaminated = final_contamination_level > 50.0
+                    
+                    contamination_updates += 1
+                    
+                    logger.debug(f"Node {pan}: Contamination updated from {original_contamination:.1f}% to {final_contamination_level:.1f}% "
+                               f"(contaminated: {original_contaminated} → {node_data.is_contaminated})")
+        
+        if contamination_updates > 0:
+            logger.info(f"Updated contamination levels for {contamination_updates} nodes after final bogus value calculation")
+        else:
+            logger.info("No contamination level updates needed")
+    
+    def _recalculate_bogus_values(self, results: Dict[str, NodeData]) -> None:
+        """
+        Recalculate bogus values after all bogus detection methods have been applied.
+        This ensures that purchases to entities marked as bogus by later methods are captured.
+        
+        Args:
+            results: Dictionary of all processed nodes
+        """
+        logger.info("Recalculating bogus values after all bogus detection methods...")
+        
+        bogus_value_updates = 0
+        
+        for pan, node_data in results.items():
+            original_bogus_value = node_data.bogus_value
+            new_bogus_value = 0.0
+            
+            # Read the node's own file to get transaction details
+            if pan in self.file_mapping:
+                data_dir = self.config.get('data_directory', 'data/input')
+                file_path = os.path.join(data_dir, self.file_mapping[pan])
+                
+                try:
+                    records = self._read_excel_data(file_path)
+                    
+                    # Check each transaction record
+                    for record in records:
+                        # If this record is a purchase (GSTR1-P) from a now-bogus entity
+                        if (record.transaction_type == 'GSTR1-P' and 
+                            record.pan in results and
+                            results[record.pan].is_bogus):
+                            
+                            # Add the actual purchase amount paid to this bogus entity
+                            new_bogus_value += record.amount
+                            
+                except Exception as e:
+                    logger.warning(f"Could not read file for {pan} to recalculate bogus value: {e}")
+                    # Keep the original bogus value if we can't read the file
+                    new_bogus_value = original_bogus_value
+            else:
+                # Keep the original bogus value if no file mapping
+                new_bogus_value = original_bogus_value
+            
+            # Update bogus value if it changed significantly
+            if abs(new_bogus_value - original_bogus_value) > 1.0:  # Allow for small rounding differences
+                node_data.bogus_value = new_bogus_value
+                bogus_value_updates += 1
+                
+                logger.debug(f"Node {pan}: Bogus value updated from ₹{original_bogus_value:,.2f} to ₹{new_bogus_value:,.2f}")
+        
+        if bogus_value_updates > 0:
+            logger.info(f"Updated bogus values for {bogus_value_updates} nodes after final bogus detection")
+        else:
+            logger.info("No bogus value updates needed")
     
     def _process_node(self, pan: str, root_records: List[TransactionRecord] = None, visited: Set[str] = None) -> NodeData:
         """
@@ -391,8 +761,6 @@ class EnhancedAnalyzer:
             total_amount = node_data.total_sales + node_data.total_purchases
             node_data.avg_transaction_size = total_amount / node_data.transaction_count
         
-        node_data.risk_score = self._calculate_risk_score(node_data)
-        
         # Cache the result
         max_cache_size = self.config.get('max_cache_size', 10000)
         if len(self.cache) < max_cache_size:
@@ -435,6 +803,9 @@ class EnhancedAnalyzer:
             
             # Collect all processed nodes from cache (includes root and all descendants)
             results = dict(self.cache)
+            
+            # Calculate bogus values for all nodes
+            self._calculate_bogus_values(results)
             
             # Update metrics
             self.metrics.total_nodes = len(results)
@@ -488,55 +859,70 @@ class EnhancedAnalyzer:
         # Summary statistics
         total_nodes = len(results)
         bogus_nodes = sum(1 for node in results.values() if node.is_bogus)
+        contaminated_nodes = sum(1 for node in results.values() if node.is_contaminated)
         total_sales = sum(node.total_sales for node in results.values())
         total_purchases = sum(node.total_purchases for node in results.values())
-        high_risk_nodes = sum(1 for node in results.values() if node.risk_score > 70)
+        total_adjusted_purchases = sum(node.adjusted_purchases for node in results.values())
+        total_bogus_value = sum(node.bogus_value for node in results.values())
+        nodes_with_bogus_value = sum(1 for node in results.values() if node.bogus_value > 0)
         
         report.append("SUMMARY STATISTICS:")
         report.append(f"Total Nodes Analyzed: {total_nodes}")
         report.append(f"Bogus Nodes Detected: {bogus_nodes} ({bogus_nodes/total_nodes*100:.1f}%)")
-        report.append(f"High Risk Nodes (Score > 70): {high_risk_nodes} ({high_risk_nodes/total_nodes*100:.1f}%)")
+        report.append(f"Contaminated Nodes: {contaminated_nodes} ({contaminated_nodes/total_nodes*100:.1f}%)")
+        report.append(f"Nodes with Bogus Value: {nodes_with_bogus_value} ({nodes_with_bogus_value/total_nodes*100:.1f}%)")
         report.append(f"Total Sales Amount: ₹{total_sales:,.2f}")
         report.append(f"Total Purchases Amount: ₹{total_purchases:,.2f}")
-        report.append(f"Overall P/S Ratio: {total_purchases/total_sales:.4f}" if total_sales > 0 else "Overall P/S Ratio: N/A")
+        report.append(f"Total Adjusted Purchases: ₹{total_adjusted_purchases:,.2f}")
+        report.append(f"Total Bogus Value: ₹{total_bogus_value:,.2f}")
+        report.append(f"Overall P/S Ratio (Original): {total_purchases/total_sales:.4f}" if total_sales > 0 else "Overall P/S Ratio (Original): N/A")
+        report.append(f"Overall P/S Ratio (Adjusted): {total_adjusted_purchases/total_sales:.4f}" if total_sales > 0 else "Overall P/S Ratio (Adjusted): N/A")
         report.append("")
         
-        # Risk analysis
-        risk_distribution = defaultdict(int)
+        # Contamination analysis
+        contamination_distribution = defaultdict(int)
         for node in results.values():
-            if node.risk_score >= 80:
-                risk_distribution['Very High'] += 1
-            elif node.risk_score >= 60:
-                risk_distribution['High'] += 1
-            elif node.risk_score >= 40:
-                risk_distribution['Medium'] += 1
-            elif node.risk_score >= 20:
-                risk_distribution['Low'] += 1
+            if node.contamination_level >= 80:
+                contamination_distribution['Very High'] += 1
+            elif node.contamination_level >= 60:
+                contamination_distribution['High'] += 1
+            elif node.contamination_level >= 40:
+                contamination_distribution['Medium'] += 1
+            elif node.contamination_level >= 20:
+                contamination_distribution['Low'] += 1
             else:
-                risk_distribution['Very Low'] += 1
+                contamination_distribution['None'] += 1
         
-        report.append("RISK DISTRIBUTION:")
-        for risk_level, count in risk_distribution.items():
-            percentage = count / total_nodes * 100
-            report.append(f"{risk_level}: {count} ({percentage:.1f}%)")
+        report.append("CONTAMINATION DISTRIBUTION:")
+        for contamination_level, count in contamination_distribution.items():
+            percentage = (count / total_nodes) * 100
+            report.append(f"{contamination_level} Contamination: {count} nodes ({percentage:.1f}%)")
         report.append("")
         
         # Detailed node analysis
         report.append("DETAILED ANALYSIS:")
-        report.append("-" * 100)
-        report.append(f"{'PAN':<15} {'Sales':<15} {'Purchases':<15} {'P/S Ratio':<10} {'Risk':<6} {'Status':<8} {'Children'}")
-        report.append("-" * 100)
+        report.append("-" * 150)
+        report.append(f"{'PAN':<15} {'Sales':<15} {'Purchases':<15} {'Adj.Purch':<15} {'Bogus Value':<15} {'P/S Ratio':<10} {'Status':<8} {'Contam%':<8} {'Children'}")
+        report.append("-" * 150)
         
-        # Sort by risk score (highest first)
-        sorted_results = sorted(results.items(), key=lambda x: x[1].risk_score, reverse=True)
+        # Sort by contamination level (highest first)
+        sorted_results = sorted(results.items(), key=lambda x: x[1].contamination_level, reverse=True)
         
         for pan, node in sorted_results:
-            status = "BOGUS" if node.is_bogus else "OK"
+            if node.is_bogus:
+                status = "BOGUS"
+            elif node.is_contaminated:
+                status = "CONTAM"
+            else:
+                status = "OK"
+            
             children_count = len(node.children)
             ratio_str = f"{node.purchase_to_sales_ratio:.4f}" if node.purchase_to_sales_ratio != float('inf') else "∞"
+            contam_str = f"{node.contamination_level:.1f}%" if node.contamination_level > 0 else "-"
             
             report.append(f"{pan:<15} {node.total_sales:<15,.0f} {node.total_purchases:<15,.0f} "
-                         f"{ratio_str:<10} {node.risk_score:<6.1f} {status:<8} {children_count}")
+                         f"{node.adjusted_purchases:<15,.0f} {node.bogus_value:<15,.0f} {ratio_str:<10} "
+                         f"{status:<8} {contam_str:<8} {children_count}")
         
         return "\n".join(report)
     
@@ -556,9 +942,13 @@ class EnhancedAnalyzer:
                     'PAN': pan,
                     'Total_Sales': node.total_sales,
                     'Total_Purchases': node.total_purchases,
+                    'Original_Total_Purchases': node.original_total_purchases,
+                    'Adjusted_Purchases': node.adjusted_purchases,
                     'Purchase_to_Sales_Ratio': node.purchase_to_sales_ratio,
-                    'Risk_Score': node.risk_score,
                     'Is_Bogus': node.is_bogus,
+                    'Bogus_Value': node.bogus_value,
+                    'Is_Contaminated': node.is_contaminated,
+                    'Contamination_Level': node.contamination_level,
                     'Transaction_Count': node.transaction_count,
                     'Avg_Transaction_Size': node.avg_transaction_size,
                     'Children_Count': len(node.children),

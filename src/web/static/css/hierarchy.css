@@ -98,14 +98,19 @@
     border-left: 5px solid #f44336;
 }
 
+.node-header.contaminated {
+    background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+    border-left: 5px solid #ff9800;
+}
+
 .node-header.ok {
     background: linear-gradient(135deg, #e8f5e8 0%, #c8e6c9 100%);
     border-left: 5px solid #4caf50;
 }
 
 .node-header.missing {
-    background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%);
-    border-left: 5px solid #ff9800;
+    background: lightgray;
+    border-left: 5px solid #5a5a5a;
 }
 
 .node-left {
@@ -172,8 +177,22 @@
     color: #4caf50;
 }
 
+.metric-value.bogus-value {
+    color: #e91e63;
+    font-weight: 700;
+}
+
+.metric-value.contamination {
+    color: #ff9800;
+    font-weight: 600;
+}
+
 .metric-value.bogus {
     color: #f44336;
+}
+
+.metric-value.contaminated {
+    color: #ff9800;
 }
 
 .metric-value.ok {

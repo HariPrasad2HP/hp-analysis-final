@@ -10,11 +10,23 @@ import os
 import argparse
 import logging
 from pathlib import Path
+import warnings
 
 # Add src directory and project root to path
 project_root = os.path.join(os.path.dirname(__file__), '..')
 sys.path.insert(0, os.path.join(project_root, 'src'))
 sys.path.insert(0, project_root)
+
+# Suppress specific openpyxl warning about default style
+# Example warning:
+# /.../openpyxl/styles/stylesheet.py:237: UserWarning: Workbook contains no default style, apply openpyxl's default
+#   warn("Workbook contains no default style, apply openpyxl's default")
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    module=r"openpyxl\.styles\.stylesheet",
+    message=r"Workbook contains no default style, apply openpyxl's default"
+)
 
 from analyzers.enhanced_analyzer import EnhancedAnalyzer
 from utils.logger import setup_logger
@@ -139,9 +151,13 @@ Examples:
                     'Entity_Name': analyzer.get_entity_name(pan),
                     'Total_Sales': float(node.total_sales),
                     'Total_Purchases': float(node.total_purchases),
+                    'Original_Total_Purchases': float(node.original_total_purchases),
+                    'Adjusted_Purchases': float(node.adjusted_purchases),
                     'Purchase_to_Sales_Ratio': float(node.purchase_to_sales_ratio) if node.purchase_to_sales_ratio != float('inf') else None,
-                    'Risk_Score': float(node.risk_score),
                     'Is_Bogus': bool(node.is_bogus),
+                    'Bogus_Value': float(node.bogus_value),
+                    'Is_Contaminated': bool(node.is_contaminated),
+                    'Contamination_Level': float(node.contamination_level),
                     'Transaction_Count': int(node.transaction_count),
                     'Avg_Transaction_Size': float(node.avg_transaction_size),
                     'Children_PANs': ', '.join(node.children) if node.children else '',

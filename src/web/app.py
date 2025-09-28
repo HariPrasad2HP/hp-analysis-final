@@ -121,34 +121,43 @@ def create_app(config=None):
             # Calculate summary statistics
             total_nodes = len(data)
             bogus_nodes = sum(1 for node in data if node.get('Is_Bogus', False))
+            contaminated_nodes = sum(1 for node in data if node.get('Is_Contaminated', False))
             total_sales = sum(node.get('Total_Sales', 0) for node in data)
             total_purchases = sum(node.get('Total_Purchases', 0) for node in data)
-            high_risk_nodes = sum(1 for node in data if node.get('Risk_Score', 0) > 70)
+            total_adjusted_purchases = sum(node.get('Adjusted_Purchases', 0) for node in data)
+            total_bogus_value = sum(node.get('Bogus_Value', 0) for node in data)
+            nodes_with_bogus_value = sum(1 for node in data if node.get('Bogus_Value', 0) > 0)
             
-            # Risk distribution
-            risk_distribution = {'Very Low': 0, 'Low': 0, 'Medium': 0, 'High': 0, 'Very High': 0}
+            # Contamination distribution
+            contamination_distribution = {'None': 0, 'Low': 0, 'Medium': 0, 'High': 0, 'Very High': 0}
             for node in data:
-                risk_score = node.get('Risk_Score', 0)
-                if risk_score >= 80:
-                    risk_distribution['Very High'] += 1
-                elif risk_score >= 60:
-                    risk_distribution['High'] += 1
-                elif risk_score >= 40:
-                    risk_distribution['Medium'] += 1
-                elif risk_score >= 20:
-                    risk_distribution['Low'] += 1
+                contamination_level = node.get('Contamination_Level', 0)
+                if contamination_level >= 80:
+                    contamination_distribution['Very High'] += 1
+                elif contamination_level >= 60:
+                    contamination_distribution['High'] += 1
+                elif contamination_level >= 40:
+                    contamination_distribution['Medium'] += 1
+                elif contamination_level >= 20:
+                    contamination_distribution['Low'] += 1
                 else:
-                    risk_distribution['Very Low'] += 1
+                    contamination_distribution['None'] += 1
             
             summary = {
                 'total_nodes': total_nodes,
                 'bogus_nodes': bogus_nodes,
                 'bogus_percentage': (bogus_nodes / total_nodes * 100) if total_nodes > 0 else 0,
+                'contaminated_nodes': contaminated_nodes,
+                'contaminated_percentage': (contaminated_nodes / total_nodes * 100) if total_nodes > 0 else 0,
                 'total_sales': total_sales,
                 'total_purchases': total_purchases,
+                'total_adjusted_purchases': total_adjusted_purchases,
+                'total_bogus_value': total_bogus_value,
+                'nodes_with_bogus_value': nodes_with_bogus_value,
+                'bogus_value_percentage': (nodes_with_bogus_value / total_nodes * 100) if total_nodes > 0 else 0,
                 'overall_ps_ratio': (total_purchases / total_sales) if total_sales > 0 else 0,
-                'high_risk_nodes': high_risk_nodes,
-                'risk_distribution': risk_distribution
+                'adjusted_ps_ratio': (total_adjusted_purchases / total_sales) if total_sales > 0 else 0,
+                'contamination_distribution': contamination_distribution
             }
             
             return jsonify(summary)
@@ -157,9 +166,9 @@ def create_app(config=None):
             logger.error(f"Error getting analysis summary: {e}")
             return jsonify({'error': 'Failed to load analysis summary'}), 500
     
-    @app.route('/api/analysis/high-risk')
-    def get_high_risk_entities():
-        """Get high risk entities"""
+    @app.route('/api/analysis/high-contamination')
+    def get_high_contamination_entities():
+        """Get high contamination entities"""
         try:
             config = app.config.get('GST_CONFIG')
             if config:
@@ -174,18 +183,18 @@ def create_app(config=None):
             with open(json_file, 'r') as f:
                 data = json.load(f)
             
-            # Filter and sort high risk entities
-            high_risk = [node for node in data if node.get('Risk_Score', 0) > 70]
-            high_risk.sort(key=lambda x: x.get('Risk_Score', 0), reverse=True)
+            # Filter and sort high contamination entities
+            high_contamination = [node for node in data if node.get('Contamination_Level', 0) > 50]
+            high_contamination.sort(key=lambda x: x.get('Contamination_Level', 0), reverse=True)
             
             # Limit to top 20
-            high_risk = high_risk[:20]
+            high_contamination = high_contamination[:20]
             
-            return jsonify(high_risk)
+            return jsonify(high_contamination)
             
         except Exception as e:
-            logger.error(f"Error getting high risk entities: {e}")
-            return jsonify({'error': 'Failed to load high risk entities'}), 500
+            logger.error(f"Error getting high contamination entities: {e}")
+            return jsonify({'error': 'Failed to load high contamination entities'}), 500
     
     @app.route('/api/analysis/search')
     def search_entities():

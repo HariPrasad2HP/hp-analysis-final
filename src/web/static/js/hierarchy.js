@@ -52,9 +52,12 @@ document.addEventListener('DOMContentLoaded', async function() {
             Total_Purchases: convertToNumber(node.Total_Purchases),
             Total_Sales: convertToNumber(node.Total_Sales),
             Purchase_to_Sales_Ratio: convertToNumber(node.Purchase_to_Sales_Ratio),
-            Risk_Score: convertToNumber(node.Risk_Score),
             Transaction_Count: convertToNumber(node.Transaction_Count),
-            Avg_Transaction_Size: convertToNumber(node.Avg_Transaction_Size)
+            Avg_Transaction_Size: convertToNumber(node.Avg_Transaction_Size),
+            Bogus_Value: convertToNumber(node.Bogus_Value),
+            Contamination_Level: convertToNumber(node.Contamination_Level),
+            Original_Total_Purchases: convertToNumber(node.Original_Total_Purchases),
+            Adjusted_Purchases: convertToNumber(node.Adjusted_Purchases)
         }));
         
         // Load PAN names
@@ -130,7 +133,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                     Total_Sales: 0,
                     Total_Purchases: 0,
                     Purchase_to_Sales_Ratio: 0,
-                    Risk_Score: 0,
                     Is_Bogus: false,
                     Transaction_Count: 0,
                     Avg_Transaction_Size: 0,
@@ -260,6 +262,9 @@ function createPurchaseNodeElement(nodeData) {
     } else if (isBogus) {
         statusClass = 'bogus';
         statusText = 'BOGUS';
+    } else if (nodeData.Is_Contaminated) {
+        statusClass = 'contaminated';
+        statusText = 'CONTAMINATED';
     } else {
         statusClass = 'ok';
         statusText = 'OK';
@@ -291,8 +296,12 @@ function createPurchaseNodeElement(nodeData) {
                     <span class="metric-value">${displayRatio}</span>
                 </div>
                 <div class="metric">
-                    <span class="metric-label">Risk Factor</span>
-                    <span class="metric-value">${nodeData.Risk_Score.toFixed(1)}</span>
+                    <span class="metric-label">Bogus Purchases</span>
+                    <span class="metric-value bogus-value">${formatCurrency(nodeData.Bogus_Value || 0)}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Contamination</span>
+                    <span class="metric-value contamination">${nodeData.Is_Contaminated ? nodeData.Contamination_Level.toFixed(1) + '%' : '0%'}</span>
                 </div>
                 <div class="metric">
                     <span class="metric-label">Status</span>
@@ -387,6 +396,10 @@ function createNonPurchaseChild(childPAN, childData) {
                     <div class="metric">
                         <span class="metric-label">Sales Value</span>
                         <span class="metric-value sales">${formatCurrency(childData.Total_Sales)}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Bogus Value</span>
+                        <span class="metric-value bogus-value">${formatCurrency(childData.Bogus_Value || 0)}</span>
                     </div>
                     <div class="metric">
                         <span class="metric-label">Status</span>
