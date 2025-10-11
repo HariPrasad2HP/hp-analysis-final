@@ -12,7 +12,7 @@ Date: 2025-09-20
 import pandas as pd
 import os
 import json
-from typing import Dict, List, Tuple, Optional, Set
+from typing import Dict, List, Tuple, Optional, Set, Any
 from dataclasses import dataclass, asdict
 from collections import defaultdict
 import logging
@@ -142,6 +142,45 @@ class EnhancedAnalyzer:
     def get_entity_name(self, pan: str) -> str:
         """Get entity name for a PAN, with fallback to PAN if not found"""
         return self.pan_names.get(pan, pan)
+    
+    def get_sales_records(self, pan: str) -> List[Dict[str, Any]]:
+        """
+        Get all sales records for a specific PAN
+        
+        Args:
+            pan: PAN to get sales records for
+            
+        Returns:
+            List of sales record dictionaries
+        """
+        if pan not in self.file_mapping:
+            return []
+        
+        try:
+            data_dir = self.config.get('data_directory', 'data/input')
+            file_path = os.path.join(data_dir, self.file_mapping[pan])
+            records = self._read_excel_data(file_path)
+            
+            # Filter for sales records only (GSTR1-R)
+            sales_records = []
+            for record in records:
+                if record.transaction_type == 'GSTR1-R':
+                    sales_records.append({
+                        'buyer_pan': record.pan,
+                        'buyer_name': record.party_name or record.pan,
+                        'amount': float(record.amount),
+                        'transaction_type': record.transaction_type,
+                        'taxpayer_type': record.taxpayer_type or '',
+                        'business_nature': record.business_nature or '',
+                        'turnover_range': record.turnover_range or '',
+                        'income_range': record.income_range or ''
+                    })
+            
+            return sales_records
+            
+        except Exception as e:
+            logger.error(f"Error reading sales records for {pan}: {e}")
+            return []
     
     def _read_excel_data(self, file_path: str) -> List[TransactionRecord]:
         """

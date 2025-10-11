@@ -311,6 +311,11 @@ function createPurchaseNodeElement(nodeData) {
                     <span class="metric-label">Children</span>
                     <span class="metric-value">${children.length}</span>
                 </div>
+                <div class="metric">
+                    <button class="show-sales-btn" onclick="showSalesRecords('${nodeData.PAN}', '${panName.replace(/'/g, "\\'")}')">
+                        📋 Show Sales
+                    </button>
+                </div>
             </div>
         </div>
     `;
@@ -409,6 +414,11 @@ function createNonPurchaseChild(childPAN, childData) {
                         <span class="metric-label">Note</span>
                         <span class="metric-value">Sales Only</span>
                     </div>
+                    <div class="metric">
+                        <button class="show-sales-btn" onclick="showSalesRecords('${childPAN}', '${getPanName(childPAN, childData).replace(/'/g, "\\'")}')">
+                            📋 Show Sales
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -486,6 +496,7 @@ function applyFilters() {
 }
 
 function clearFilters() {
+    document.getElementById('panSearch').value = '';
     document.getElementById('minPurchase').value = '';
     document.getElementById('minSales').value = '';
     document.getElementById('statusFilter').value = '';
@@ -501,4 +512,755 @@ function clearFilters() {
     displayPurchaseNodes(filteredNodes, contentEl);
     
     console.log('Filters cleared, showing all purchase nodes');
+}
+
+// PAN Search Functionality
+function searchPAN() {
+    const searchTerm = document.getElementById('panSearch').value.trim();
+    
+    if (!searchTerm) {
+        alert('Please enter a PAN number or entity name to search');
+        return;
+    }
+    
+    console.log(`Searching for PAN: ${searchTerm}`);
+    
+    // Search in all data (not just purchase nodes)
+    const searchResults = allData.filter(node => {
+        const panMatch = node.PAN && node.PAN.toLowerCase().includes(searchTerm.toLowerCase());
+        const nameMatch = node.Entity_Name && node.Entity_Name.toLowerCase().includes(searchTerm.toLowerCase());
+        return panMatch || nameMatch;
+    });
+    
+    console.log(`Found ${searchResults.length} matching entities`);
+    
+    if (searchResults.length === 0) {
+        alert(`No entities found matching "${searchTerm}"`);
+        return;
+    }
+    
+    // Display search results
+    displaySearchResults(searchResults, searchTerm);
+}
+
+function displaySearchResults(results, searchTerm) {
+    const contentEl = document.getElementById('content');
+    const sectionTitle = document.getElementById('section-title');
+    
+    // Update section title
+    sectionTitle.textContent = `Search Results for "${searchTerm}" (${results.length} found)`;
+    
+    if (results.length === 1) {
+        // Single result - show detailed view with hierarchy
+        const entity = results[0];
+        showEntityDetails(entity);
+    } else {
+        // Multiple results - show list view
+        contentEl.innerHTML = '';
+        
+        results.forEach(entity => {
+            const entityDiv = createSearchResultNode(entity, searchTerm);
+            contentEl.appendChild(entityDiv);
+        });
+    }
+}
+
+function createSearchResultNode(nodeData, searchTerm) {
+    const nodeDiv = document.createElement('div');
+    nodeDiv.className = 'node search-result';
+    
+    const panName = nodeData.Entity_Name || nodeData.PAN;
+    const statusClass = nodeData.Is_Bogus ? 'bogus' : 'ok';
+    const statusText = nodeData.Is_Bogus ? 'BOGUS' : 'OK';
+    
+    // Highlight search term in PAN and name
+    const highlightedPAN = highlightSearchTerm(nodeData.PAN, searchTerm);
+    const highlightedName = highlightSearchTerm(panName, searchTerm);
+    
+    nodeDiv.innerHTML = `
+        <div class="node-header ${statusClass}">
+            <div class="node-left">
+                <span class="toggle-btn">🔍</span>
+                <div class="node-identity">
+                    <div class="node-name">${highlightedName}</div>
+                    <div class="node-pan">${highlightedPAN}</div>
+                </div>
+            </div>
+            <div class="node-metrics">
+                <div class="metric">
+                    <span class="metric-label">Purchase Value</span>
+                    <span class="metric-value purchase">${formatCurrency(nodeData.Total_Purchases)}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Sales Value</span>
+                    <span class="metric-value sales">${formatCurrency(nodeData.Total_Sales)}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">P/S Ratio</span>
+                    <span class="metric-value">${nodeData.Purchase_to_Sales_Ratio ? nodeData.Purchase_to_Sales_Ratio.toFixed(3) : 'N/A'}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Status</span>
+                    <span class="metric-value ${statusClass}">${statusText}</span>
+                </div>
+                <div class="metric">
+                    <button class="show-sales-btn" onclick="showSalesRecords('${nodeData.PAN}', '${panName.replace(/'/g, "\\'")}')">
+                        📋 Show Sales
+                    </button>
+                </div>
+                <div class="metric">
+                    <button class="view-details-btn" onclick="showEntityDetails('${nodeData.PAN}')">
+                        📊 View Details
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    return nodeDiv;
+}
+
+function highlightSearchTerm(text, searchTerm) {
+    if (!text || !searchTerm) return text || '';
+    
+    const regex = new RegExp(`(${searchTerm})`, 'gi');
+    return text.replace(regex, '<mark class="search-highlight">$1</mark>');
+}
+
+function showEntityDetails(panOrEntity) {
+    let entity;
+    
+    if (typeof panOrEntity === 'string') {
+        // PAN string provided, find the entity
+        entity = allData.find(node => node.PAN === panOrEntity);
+        if (!entity) {
+            alert(`Entity with PAN ${panOrEntity} not found`);
+            return;
+        }
+    } else {
+        // Entity object provided
+        entity = panOrEntity;
+    }
+    
+    const contentEl = document.getElementById('content');
+    const sectionTitle = document.getElementById('section-title');
+    
+    // Update section title
+    sectionTitle.textContent = `Entity Details: ${entity.Entity_Name || entity.PAN}`;
+    
+    // Create detailed view
+    contentEl.innerHTML = `
+        <div class="entity-details">
+            <div class="entity-header">
+                <h2>${entity.Entity_Name || entity.PAN}</h2>
+                <p class="entity-pan">PAN: ${entity.PAN}</p>
+            </div>
+            
+            <div class="entity-metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-title">Financial Overview</div>
+                    <div class="metric-row">
+                        <span class="metric-label">Total Sales:</span>
+                        <span class="metric-value sales">${formatCurrency(entity.Total_Sales)}</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Total Purchases:</span>
+                        <span class="metric-value purchase">${formatCurrency(entity.Total_Purchases)}</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">P/S Ratio:</span>
+                        <span class="metric-value">${entity.Purchase_to_Sales_Ratio ? entity.Purchase_to_Sales_Ratio.toFixed(3) : 'N/A'}</span>
+                    </div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-title">Risk Assessment</div>
+                    <div class="metric-row">
+                        <span class="metric-label">Status:</span>
+                        <span class="metric-value ${entity.Is_Bogus ? 'bogus' : 'ok'}">${entity.Is_Bogus ? 'BOGUS' : 'OK'}</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Bogus Value:</span>
+                        <span class="metric-value bogus-value">${formatCurrency(entity.Bogus_Value || 0)}</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Contamination:</span>
+                        <span class="metric-value contamination">${entity.Is_Contaminated ? entity.Contamination_Level.toFixed(1) + '%' : '0%'}</span>
+                    </div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-title">Relationships</div>
+                    <div class="metric-row">
+                        <span class="metric-label">Children:</span>
+                        <span class="metric-value">${entity.Children_PANs ? entity.Children_PANs.split(',').length : 0}</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Parents:</span>
+                        <span class="metric-value">${entity.Parents_PANs ? entity.Parents_PANs.split(',').length : 0}</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Transaction Count:</span>
+                        <span class="metric-value">${entity.Transaction_Count || 0}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="entity-actions">
+                <button class="action-btn primary" onclick="showSalesRecords('${entity.PAN}', '${(entity.Entity_Name || entity.PAN).replace(/'/g, "\\'")}')">
+                    📋 View Sales Records
+                </button>
+                <button class="action-btn secondary" onclick="showEntityInHierarchy('${entity.PAN}')">
+                    🌳 Show in Hierarchy
+                </button>
+                <button class="action-btn secondary" onclick="loadHierarchyView()">
+                    ← Back to Hierarchy
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+function showEntityInHierarchy(pan) {
+    // Check if the entity is in the current purchase nodes
+    const entityInPurchaseNodes = purchaseNodes.find(node => node.PAN === pan);
+    
+    if (entityInPurchaseNodes) {
+        // Entity is in current hierarchy, scroll to it
+        loadHierarchyView();
+        setTimeout(() => {
+            const entityElement = document.querySelector(`[data-pan="${pan}"]`);
+            if (entityElement) {
+                entityElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                entityElement.classList.add('highlight-entity');
+                setTimeout(() => {
+                    entityElement.classList.remove('highlight-entity');
+                }, 3000);
+            }
+        }, 500);
+    } else {
+        alert(`Entity ${pan} is not in the current purchase hierarchy. It may be a sales-only entity or not directly connected to the root node.`);
+    }
+}
+
+// Add keyboard support for search
+document.addEventListener('DOMContentLoaded', function() {
+    const panSearchInput = document.getElementById('panSearch');
+    if (panSearchInput) {
+        panSearchInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                searchPAN();
+            }
+        });
+        
+        // Real-time search as user types (optional)
+        panSearchInput.addEventListener('input', function(e) {
+            const searchTerm = e.target.value.trim();
+            if (searchTerm.length >= 3) {
+                // Show search suggestions or live results
+                showSearchSuggestions(searchTerm);
+            }
+        });
+    }
+});
+
+function showSearchSuggestions(searchTerm) {
+    // Find matching entities
+    const matches = allData.filter(node => {
+        const panMatch = node.PAN && node.PAN.toLowerCase().includes(searchTerm.toLowerCase());
+        const nameMatch = node.Entity_Name && node.Entity_Name.toLowerCase().includes(searchTerm.toLowerCase());
+        return panMatch || nameMatch;
+    }).slice(0, 5); // Limit to 5 suggestions
+    
+    // Create or update suggestions dropdown
+    let suggestionsDiv = document.getElementById('pan-search-suggestions');
+    if (!suggestionsDiv) {
+        suggestionsDiv = document.createElement('div');
+        suggestionsDiv.id = 'pan-search-suggestions';
+        suggestionsDiv.className = 'search-suggestions';
+        document.getElementById('panSearch').parentNode.appendChild(suggestionsDiv);
+    }
+    
+    if (matches.length > 0) {
+        suggestionsDiv.innerHTML = matches.map(entity => `
+            <div class="suggestion-item" onclick="selectSearchSuggestion('${entity.PAN}', '${(entity.Entity_Name || entity.PAN).replace(/'/g, "\\'")}')">
+                <div class="suggestion-pan">${entity.PAN}</div>
+                <div class="suggestion-name">${entity.Entity_Name || 'No Name'}</div>
+            </div>
+        `).join('');
+        suggestionsDiv.style.display = 'block';
+    } else {
+        suggestionsDiv.style.display = 'none';
+    }
+}
+
+function selectSearchSuggestion(pan, name) {
+    document.getElementById('panSearch').value = pan;
+    document.getElementById('pan-search-suggestions').style.display = 'none';
+    searchPAN();
+}
+
+function loadHierarchyView() {
+    // Reset to hierarchy view
+    const contentEl = document.getElementById('content');
+    const sectionTitle = document.getElementById('section-title');
+    
+    // Update section title
+    sectionTitle.textContent = `Children of Root Node ${ROOT_NODE_PAN} (${purchaseNodes.length})`;
+    
+    // Display purchase nodes
+    displayPurchaseNodes(filteredNodes.length > 0 ? filteredNodes : purchaseNodes, contentEl);
+    
+    // Clear search input
+    document.getElementById('panSearch').value = '';
+    
+    // Hide suggestions if visible
+    const suggestionsDiv = document.getElementById('pan-search-suggestions');
+    if (suggestionsDiv) {
+        suggestionsDiv.style.display = 'none';
+    }
+}
+
+// Sales Records Modal Functions
+async function showSalesRecords(pan, entityName) {
+    try {
+        console.log(`Fetching sales records for PAN: ${pan}`);
+        
+        // Show loading state
+        showSalesModal(pan, entityName, [], true);
+        
+        // Fetch sales records from API
+        const response = await fetch(`/api/sales/${pan}`);
+        
+        if (!response.ok) {
+            throw new Error(`Failed to fetch sales records: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log(`Loaded ${data.total_sales_records} sales records for ${pan}`);
+        
+        // Show the modal with data
+        showSalesModal(pan, entityName, data, false);
+        
+    } catch (error) {
+        console.error('Error fetching sales records:', error);
+        showSalesModal(pan, entityName, { error: error.message }, false);
+    }
+}
+
+function showSalesModal(pan, entityName, data, isLoading) {
+    // Remove existing modal if any
+    const existingModal = document.getElementById('sales-modal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+    
+    // Create modal HTML
+    const modal = document.createElement('div');
+    modal.id = 'sales-modal';
+    modal.className = 'sales-modal';
+    
+    let modalContent = '';
+    
+    if (isLoading) {
+        modalContent = `
+            <div class="sales-modal-content">
+                <div class="sales-modal-header">
+                    <h3>📋 Sales Records - ${entityName}</h3>
+                    <span class="sales-modal-close" onclick="closeSalesModal()">&times;</span>
+                </div>
+                <div class="sales-modal-body">
+                    <div class="loading">Loading sales records...</div>
+                </div>
+            </div>
+        `;
+    } else if (data.error) {
+        modalContent = `
+            <div class="sales-modal-content">
+                <div class="sales-modal-header">
+                    <h3>📋 Sales Records - ${entityName}</h3>
+                    <span class="sales-modal-close" onclick="closeSalesModal()">&times;</span>
+                </div>
+                <div class="sales-modal-body">
+                    <div class="error">Error: ${data.error}</div>
+                </div>
+            </div>
+        `;
+    } else {
+        const salesRecords = data.sales_records || [];
+        const totalAmount = data.total_sales_amount || 0;
+        
+        let recordsHTML = '';
+        if (salesRecords.length === 0) {
+            recordsHTML = '<div class="no-records">No sales records found for this entity.</div>';
+        } else {
+            recordsHTML = `
+                <div class="sales-summary">
+                    <div class="summary-item">
+                        <span class="summary-label">Total Sales Records:</span>
+                        <span class="summary-value">${salesRecords.length}</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">Total Sales Amount:</span>
+                        <span class="summary-value">${formatCurrency(totalAmount)}</span>
+                    </div>
+                </div>
+                <div class="sales-controls">
+                    <div class="sales-search">
+                        <input type="text" id="sales-search" placeholder="🔍 Search by PAN, Name, or Business..." />
+                    </div>
+                    <div class="sales-filters">
+                        <select id="taxpayer-filter">
+                            <option value="">All Taxpayer Types</option>
+                        </select>
+                        <select id="amount-sort">
+                            <option value="desc">Sort by Amount (High to Low)</option>
+                            <option value="asc">Sort by Amount (Low to High)</option>
+                            <option value="pan">Sort by PAN (A-Z)</option>
+                            <option value="name">Sort by Name (A-Z)</option>
+                        </select>
+                        <button id="clear-filters" class="clear-filters-btn">Clear Filters</button>
+                    </div>
+                </div>
+                <div class="sales-records-table">
+                    <table id="sales-table">
+                        <thead>
+                            <tr>
+                                <th data-sort="buyer_pan">Buyer PAN <span class="sort-indicator"></span></th>
+                                <th data-sort="buyer_name">Buyer Name <span class="sort-indicator"></span></th>
+                                <th data-sort="amount">Amount <span class="sort-indicator">↓</span></th>
+                                <th data-sort="taxpayer_type">Taxpayer Type <span class="sort-indicator"></span></th>
+                                <th data-sort="business_nature">Business Nature <span class="sort-indicator"></span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="sales-table-body">
+                            <!-- Data will be populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="sales-pagination">
+                    <div class="pagination-info">
+                        <span id="pagination-info">Showing <span id="showing-count">0</span> of <span id="total-count">0</span> records</span>
+                    </div>
+                    <div class="pagination-controls">
+                        <button id="prev-page" class="pagination-btn">← Previous</button>
+                        <span id="page-info">Page <span id="current-page">1</span> of <span id="total-pages">1</span></span>
+                        <button id="next-page" class="pagination-btn">Next →</button>
+                    </div>
+                </div>
+            `;
+        }
+        
+        modalContent = `
+            <div class="sales-modal-content">
+                <div class="sales-modal-header">
+                    <h3>📋 Sales Records - ${entityName}</h3>
+                    <span class="sales-modal-close" onclick="closeSalesModal()">&times;</span>
+                </div>
+                <div class="sales-modal-body">
+                    ${recordsHTML}
+                </div>
+            </div>
+        `;
+    }
+    
+    modal.innerHTML = modalContent;
+    
+    // Add click outside to close
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) {
+            closeSalesModal();
+        }
+    });
+    
+    // Add to body
+    document.body.appendChild(modal);
+    
+    // Show modal
+    setTimeout(() => {
+        modal.classList.add('show');
+        
+        // Initialize sales table functionality if we have sales records
+        if (!isLoading && !data.error && data.sales_records && data.sales_records.length > 0) {
+            initializeSalesTable(data.sales_records);
+        }
+    }, 10);
+}
+
+function closeSalesModal() {
+    const modal = document.getElementById('sales-modal');
+    if (modal) {
+        modal.classList.remove('show');
+        setTimeout(() => {
+            modal.remove();
+        }, 300);
+    }
+}
+
+// Sales Table Management
+let currentSalesData = [];
+let filteredSalesData = [];
+let currentSortField = 'amount';
+let currentSortDirection = 'desc';
+let currentPage = 1;
+const recordsPerPage = 10;
+
+function initializeSalesTable(salesRecords) {
+    console.log('Initializing sales table with records:', salesRecords);
+    currentSalesData = [...salesRecords];
+    filteredSalesData = [...salesRecords];
+    
+    // Populate taxpayer filter options
+    populateTaxpayerFilter();
+    
+    // Sort by amount (high to low) by default
+    sortSalesData('amount', 'desc');
+    
+    // Set up event listeners
+    setupSalesTableEventListeners();
+    
+    // Initial render
+    renderSalesTable();
+    updatePaginationInfo();
+    
+    console.log('Sales table initialized with', filteredSalesData.length, 'records');
+}
+
+function populateTaxpayerFilter() {
+    const taxpayerFilter = document.getElementById('taxpayer-filter');
+    if (!taxpayerFilter) return;
+    
+    // Get unique taxpayer types
+    const taxpayerTypes = [...new Set(currentSalesData.map(record => record.taxpayer_type).filter(type => type && type.trim()))];
+    
+    // Clear existing options (except "All")
+    taxpayerFilter.innerHTML = '<option value="">All Taxpayer Types</option>';
+    
+    // Add unique taxpayer types
+    taxpayerTypes.forEach(type => {
+        const option = document.createElement('option');
+        option.value = type;
+        option.textContent = type.length > 30 ? type.substring(0, 30) + '...' : type;
+        option.title = type;
+        taxpayerFilter.appendChild(option);
+    });
+}
+
+function setupSalesTableEventListeners() {
+    // Search input
+    const searchInput = document.getElementById('sales-search');
+    if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
+            filterSalesData();
+        });
+    }
+    
+    // Taxpayer filter
+    const taxpayerFilter = document.getElementById('taxpayer-filter');
+    if (taxpayerFilter) {
+        taxpayerFilter.addEventListener('change', (e) => {
+            filterSalesData();
+        });
+    }
+    
+    // Sort dropdown
+    const amountSort = document.getElementById('amount-sort');
+    if (amountSort) {
+        amountSort.addEventListener('change', (e) => {
+            const [field, direction] = e.target.value === 'desc' ? ['amount', 'desc'] :
+                                     e.target.value === 'asc' ? ['amount', 'asc'] :
+                                     e.target.value === 'pan' ? ['buyer_pan', 'asc'] :
+                                     ['buyer_name', 'asc'];
+            sortSalesData(field, direction);
+        });
+    }
+    
+    // Clear filters button
+    const clearFilters = document.getElementById('clear-filters');
+    if (clearFilters) {
+        clearFilters.addEventListener('click', () => {
+            clearSalesFilters();
+        });
+    }
+    
+    // Column header sorting
+    const headers = document.querySelectorAll('#sales-table th[data-sort]');
+    headers.forEach(header => {
+        header.addEventListener('click', () => {
+            const field = header.getAttribute('data-sort');
+            const newDirection = (currentSortField === field && currentSortDirection === 'asc') ? 'desc' : 'asc';
+            sortSalesData(field, newDirection);
+            
+            // Update sort dropdown to match
+            const sortSelect = document.getElementById('amount-sort');
+            if (sortSelect && field === 'amount') {
+                sortSelect.value = newDirection;
+            }
+        });
+    });
+    
+    // Pagination controls
+    const prevBtn = document.getElementById('prev-page');
+    const nextBtn = document.getElementById('next-page');
+    
+    if (prevBtn) {
+        prevBtn.addEventListener('click', () => {
+            if (currentPage > 1) {
+                currentPage--;
+                renderSalesTable();
+                updatePaginationInfo();
+            }
+        });
+    }
+    
+    if (nextBtn) {
+        nextBtn.addEventListener('click', () => {
+            const totalPages = Math.ceil(filteredSalesData.length / recordsPerPage);
+            if (currentPage < totalPages) {
+                currentPage++;
+                renderSalesTable();
+                updatePaginationInfo();
+            }
+        });
+    }
+}
+
+function filterSalesData() {
+    const searchTerm = document.getElementById('sales-search')?.value.toLowerCase() || '';
+    const taxpayerFilter = document.getElementById('taxpayer-filter')?.value || '';
+    
+    filteredSalesData = currentSalesData.filter(record => {
+        // Search filter
+        const matchesSearch = !searchTerm || 
+            record.buyer_pan.toLowerCase().includes(searchTerm) ||
+            (record.buyer_name && record.buyer_name.toLowerCase().includes(searchTerm)) ||
+            (record.business_nature && record.business_nature.toLowerCase().includes(searchTerm));
+        
+        // Taxpayer filter
+        const matchesTaxpayer = !taxpayerFilter || record.taxpayer_type === taxpayerFilter;
+        
+        return matchesSearch && matchesTaxpayer;
+    });
+    
+    // Reset to first page
+    currentPage = 1;
+    
+    // Re-render table
+    renderSalesTable();
+    updatePaginationInfo();
+}
+
+function sortSalesData(field, direction) {
+    currentSortField = field;
+    currentSortDirection = direction;
+    
+    filteredSalesData.sort((a, b) => {
+        let aVal = a[field];
+        let bVal = b[field];
+        
+        // Handle different data types
+        if (field === 'amount') {
+            aVal = parseFloat(aVal) || 0;
+            bVal = parseFloat(bVal) || 0;
+        } else {
+            aVal = (aVal || '').toString().toLowerCase();
+            bVal = (bVal || '').toString().toLowerCase();
+        }
+        
+        let comparison = 0;
+        if (aVal < bVal) comparison = -1;
+        if (aVal > bVal) comparison = 1;
+        
+        return direction === 'desc' ? -comparison : comparison;
+    });
+    
+    // Update sort indicators
+    updateSortIndicators();
+    
+    // Re-render table
+    renderSalesTable();
+    updatePaginationInfo();
+}
+
+function updateSortIndicators() {
+    // Clear all indicators
+    document.querySelectorAll('.sort-indicator').forEach(indicator => {
+        indicator.textContent = '';
+    });
+    
+    // Set current indicator
+    const currentHeader = document.querySelector(`th[data-sort="${currentSortField}"] .sort-indicator`);
+    if (currentHeader) {
+        currentHeader.textContent = currentSortDirection === 'asc' ? '↑' : '↓';
+    }
+}
+
+function renderSalesTable() {
+    console.log('Rendering sales table...');
+    const tbody = document.getElementById('sales-table-body');
+    if (!tbody) {
+        console.error('Sales table body not found!');
+        return;
+    }
+    
+    const startIndex = (currentPage - 1) * recordsPerPage;
+    const endIndex = startIndex + recordsPerPage;
+    const pageData = filteredSalesData.slice(startIndex, endIndex);
+    
+    console.log('Rendering', pageData.length, 'records for page', currentPage);
+    
+    tbody.innerHTML = pageData.map(record => `
+        <tr>
+            <td>${record.buyer_pan}</td>
+            <td title="${record.buyer_name || record.buyer_pan}">${record.buyer_name || record.buyer_pan}</td>
+            <td class="amount">${formatCurrency(record.amount)}</td>
+            <td title="${record.taxpayer_type || '-'}">${(record.taxpayer_type || '-').length > 20 ? (record.taxpayer_type || '-').substring(0, 20) + '...' : (record.taxpayer_type || '-')}</td>
+            <td title="${record.business_nature || '-'}">${(record.business_nature || '-').length > 30 ? (record.business_nature || '-').substring(0, 30) + '...' : (record.business_nature || '-')}</td>
+        </tr>
+    `).join('');
+    
+    console.log('Table rendered with HTML length:', tbody.innerHTML.length);
+}
+
+function updatePaginationInfo() {
+    const totalRecords = filteredSalesData.length;
+    const totalPages = Math.ceil(totalRecords / recordsPerPage);
+    const startRecord = totalRecords > 0 ? (currentPage - 1) * recordsPerPage + 1 : 0;
+    const endRecord = Math.min(currentPage * recordsPerPage, totalRecords);
+    
+    // Update counts
+    document.getElementById('showing-count').textContent = totalRecords;
+    document.getElementById('total-count').textContent = currentSalesData.length;
+    document.getElementById('current-page').textContent = currentPage;
+    document.getElementById('total-pages').textContent = totalPages;
+    
+    // Update pagination info
+    document.getElementById('pagination-info').innerHTML = 
+        `Showing ${startRecord}-${endRecord} of ${totalRecords} records`;
+    
+    // Update button states
+    const prevBtn = document.getElementById('prev-page');
+    const nextBtn = document.getElementById('next-page');
+    
+    if (prevBtn) prevBtn.disabled = currentPage <= 1;
+    if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
+}
+
+function clearSalesFilters() {
+    // Clear search
+    const searchInput = document.getElementById('sales-search');
+    if (searchInput) searchInput.value = '';
+    
+    // Clear taxpayer filter
+    const taxpayerFilter = document.getElementById('taxpayer-filter');
+    if (taxpayerFilter) taxpayerFilter.value = '';
+    
+    // Reset sort to default (amount desc)
+    const sortSelect = document.getElementById('amount-sort');
+    if (sortSelect) sortSelect.value = 'desc';
+    
+    // Reset data and re-render
+    filteredSalesData = [...currentSalesData];
+    currentPage = 1;
+    sortSalesData('amount', 'desc');
 }

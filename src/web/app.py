@@ -238,6 +238,50 @@ def create_app(config=None):
     def internal_error(error):
         return jsonify({'error': 'Internal server error'}), 500
     
+    # Sales records endpoint
+    @app.route('/api/sales/<pan>')
+    def get_sales_records(pan):
+        """Get all sales records for a specific PAN from JSON data"""
+        try:
+            config = app.config.get('GST_CONFIG')
+            if config:
+                data_dir = getattr(config, 'output_directory', 'data/output')
+            else:
+                data_dir = 'data/output'
+            
+            # Load analysis results from JSON file
+            json_file = os.path.join(data_dir, 'gst_table_data.json')
+            if not os.path.exists(json_file):
+                return jsonify({'error': 'Analysis data not found'}), 404
+            
+            with open(json_file, 'r') as f:
+                data = json.load(f)
+            
+            # Find the entity data
+            entity_data = None
+            for item in data:
+                if item['PAN'] == pan:
+                    entity_data = item
+                    break
+            
+            if not entity_data:
+                return jsonify({'error': f'No data found for PAN: {pan}'}), 404
+            
+            # Get sales records from the stored data
+            sales_records = entity_data.get('Sales_Records', [])
+            total_sales_amount = sum(record['amount'] for record in sales_records)
+            
+            return jsonify({
+                'seller_pan': pan,
+                'seller_name': entity_data.get('Entity_Name', pan),
+                'total_sales_records': len(sales_records),
+                'total_sales_amount': total_sales_amount,
+                'sales_records': sales_records
+            })
+            
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     # Health check
     @app.route('/health')
     def health_check():

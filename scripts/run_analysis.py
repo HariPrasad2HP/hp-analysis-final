@@ -146,6 +146,9 @@ Examples:
             # Prepare data for web interface
             web_data = []
             for pan, node in results.items():
+                # Get sales records for this PAN
+                sales_records = analyzer.get_sales_records(pan)
+                
                 web_data.append({
                     'PAN': pan,
                     'Entity_Name': analyzer.get_entity_name(pan),
@@ -161,7 +164,9 @@ Examples:
                     'Transaction_Count': int(node.transaction_count),
                     'Avg_Transaction_Size': float(node.avg_transaction_size),
                     'Children_PANs': ', '.join(node.children) if node.children else '',
-                    'Parents_PANs': ', '.join(node.parents) if node.parents else ''
+                    'Parents_PANs': ', '.join(node.parents) if node.parents else '',
+                    'Sales_Records': sales_records,
+                    'Total_Sales_Records': len(sales_records)
                 })
             
             json_file = os.path.join(config.output_directory, config.json_filename)
