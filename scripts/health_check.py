@@ -46,8 +46,7 @@ def check_web_server(base_url="http://localhost:8001"):
     
     # Test pages
     pages = {
-        'Dashboard': '/',
-        'Hierarchy': '/hierarchy',
+        'Hierarchy': '/',
         'DAG': '/dag',
         'Health': '/health'
     }

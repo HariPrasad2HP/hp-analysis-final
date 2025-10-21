@@ -826,21 +826,34 @@ async function showSalesRecords(pan, entityName) {
     try {
         console.log(`Fetching sales records for PAN: ${pan}`);
         
+        // Get seller entity data to determine status
+        const sellerEntity = allData.find(entity => entity.PAN === pan);
+        const sellerStatus = {
+            is_bogus: sellerEntity ? sellerEntity.Is_Bogus : false,
+            is_contaminated: sellerEntity ? sellerEntity.Is_Contaminated : false,
+            contamination_level: sellerEntity ? sellerEntity.Contamination_Level : 0
+        };
+        
         // Show loading state
-        showSalesModal(pan, entityName, [], true);
+        showSalesModal(pan, entityName, [], true, sellerStatus);
         
-        // Fetch sales records from API
-        const response = await fetch(`/api/sales/${pan}`);
-        
-        if (!response.ok) {
-            throw new Error(`Failed to fetch sales records: ${response.status}`);
+        try {
+            // Fetch sales records from API
+            const response = await fetch(`/api/sales/${pan}`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch sales records: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            console.log(`Loaded ${data.total_sales_records} sales records for ${pan}`);
+            
+            // Show the modal with data
+            showSalesModal(pan, entityName, data, false, sellerStatus);
+        } catch (error) {
+            console.error('Error fetching sales records:', error);
+            showSalesModal(pan, entityName, { error: error.message }, false);
         }
-        
-        const data = await response.json();
-        console.log(`Loaded ${data.total_sales_records} sales records for ${pan}`);
-        
-        // Show the modal with data
-        showSalesModal(pan, entityName, data, false);
         
     } catch (error) {
         console.error('Error fetching sales records:', error);
@@ -848,7 +861,7 @@ async function showSalesRecords(pan, entityName) {
     }
 }
 
-function showSalesModal(pan, entityName, data, isLoading) {
+function showSalesModal(pan, entityName, data, isLoading, sellerStatus = null) {
     // Remove existing modal if any
     const existingModal = document.getElementById('sales-modal');
     if (existingModal) {
@@ -982,7 +995,7 @@ function showSalesModal(pan, entityName, data, isLoading) {
         
         // Initialize sales table functionality if we have sales records
         if (!isLoading && !data.error && data.sales_records && data.sales_records.length > 0) {
-            initializeSalesTable(data.sales_records);
+            initializeSalesTable(data.sales_records, sellerStatus);
         }
     }, 10);
 }
@@ -1005,10 +1018,14 @@ let currentSortDirection = 'desc';
 let currentPage = 1;
 const recordsPerPage = 10;
 
-function initializeSalesTable(salesRecords) {
+function initializeSalesTable(salesRecords, sellerStatus = null) {
     console.log('Initializing sales table with records:', salesRecords);
+    console.log('Seller status:', sellerStatus);
     currentSalesData = [...salesRecords];
     filteredSalesData = [...salesRecords];
+
+    // Store seller status for use in rendering
+    window.currentSellerStatus = sellerStatus;
     
     // Populate taxpayer filter options
     populateTaxpayerFilter();
@@ -1202,28 +1219,49 @@ function renderSalesTable() {
         console.error('Sales table body not found!');
         return;
     }
-    
     const startIndex = (currentPage - 1) * recordsPerPage;
     const endIndex = startIndex + recordsPerPage;
     const pageData = filteredSalesData.slice(startIndex, endIndex);
     
     console.log('Rendering', pageData.length, 'records for page', currentPage);
     
-    tbody.innerHTML = pageData.map(record => `
-        <tr>
-            <td>${record.buyer_pan}</td>
-            <td title="${record.buyer_name || record.buyer_pan}">${record.buyer_name || record.buyer_pan}</td>
-            <td class="amount">${formatCurrency(record.amount)}</td>
-            <td title="${record.taxpayer_type || '-'}">${(record.taxpayer_type || '-').length > 20 ? (record.taxpayer_type || '-').substring(0, 20) + '...' : (record.taxpayer_type || '-')}</td>
-            <td title="${record.business_nature || '-'}">${(record.business_nature || '-').length > 30 ? (record.business_nature || '-').substring(0, 30) + '...' : (record.business_nature || '-')}</td>
-        </tr>
-    `).join('');
+    // Get seller status for color coding
+    const sellerStatus = window.currentSellerStatus;
+    
+    tbody.innerHTML = pageData.map(record => {
+        // Determine row class and status indicator based on seller status
+        let rowClass = '';
+        let statusIndicator = '';
+        
+        if (sellerStatus) {
+            if (sellerStatus.is_bogus) {
+                rowClass = 'sales-record-bogus';
+                statusIndicator = '<span class="status-indicator bogus" title="Sales from BOGUS entity">🚨</span>';
+            } else if (sellerStatus.is_contaminated) {
+                rowClass = 'sales-record-contaminated';
+                statusIndicator = '<span class="status-indicator contaminated" title="Sales from CONTAMINATED entity">⚠️</span>';
+            } else {
+                rowClass = 'sales-record-ok';
+                statusIndicator = '<span class="status-indicator ok" title="Sales from OK entity">✅</span>';
+            }
+        }
+        
+        return `
+            <tr class="${rowClass}">
+                <td>${statusIndicator} ${record.buyer_pan}</td>
+                <td title="${record.buyer_name || record.buyer_pan}">${record.buyer_name || record.buyer_pan}</td>
+                <td class="amount">${formatCurrency(record.amount)}</td>
+                <td title="${record.taxpayer_type || '-'}">${(record.taxpayer_type || '-').length > 20 ? (record.taxpayer_type || '-').substring(0, 20) + '...' : (record.taxpayer_type || '-')}</td>
+                <td title="${record.business_nature || '-'}">${(record.business_nature || '-').length > 30 ? (record.business_nature || '-').substring(0, 30) + '...' : (record.business_nature || '-')}</td>
+            </tr>
+        `;
+    }).join('');
     
     console.log('Table rendered with HTML length:', tbody.innerHTML.length);
 }
 
 function updatePaginationInfo() {
-    const totalRecords = filteredSalesData.length;
+    // ...
     const totalPages = Math.ceil(totalRecords / recordsPerPage);
     const startRecord = totalRecords > 0 ? (currentPage - 1) * recordsPerPage + 1 : 0;
     const endRecord = Math.min(currentPage * recordsPerPage, totalRecords);

@@ -34,13 +34,8 @@ def create_app(config=None):
     # Routes
     @app.route('/')
     def index():
-        """Main dashboard page"""
-        return render_template('dashboard.html')
-    
-    @app.route('/dashboard')
-    def dashboard():
-        """Dashboard page"""
-        return render_template('dashboard.html')
+        """Main page"""
+        return render_template('hierarchy.html')
     
     @app.route('/hierarchy')
     def hierarchy():
